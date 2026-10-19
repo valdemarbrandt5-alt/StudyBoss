@@ -32,11 +32,13 @@ Browseren vælger GPU. Et positivt WebGPU-tjek er ikke en garanti for nok hukomm
 ## Funktioner og grænser
 
 - Chat med streaming, stop, kort samtalekontekst og eksport til tekst.
-- Øvelsesopgave og vejledende feedback efter elevens svar; ingen officielle karakterer.
+- Mine fag: opret/vælg/omdøb fag. Materiale, samtaler, noter, seneste øvelse og op til 100 bedømmelser pr. fag gemmes i IndexedDB på denne browser. Gemte ændringer overlever genindlæsning; de synkroniseres ikke til andre enheder eller profiler. Browserrydning/privat browsing kan fjerne dem.
+- Materialeoversigt pr. fag med visning af den læste tekst. Chat, øvelser og bedømmelser viser de faktiske filnavne, som udvælgelsen gav til modellen, eller at ingen filuddrag blev brugt.
+- Øvelsesopgave og vejledende feedback efter elevens svar. 7-trinsskalaen bruger præcis -3, 00, 02, 4, 7, 10, 12. Bedømmelse genereres som JSON med enum-begrænset karakter og valideres før visning/gemning. Afbrudte eller ugyldige svar gemmes ikke som karakterer. Alle karakterer er AI-estimater, ikke officielle karakterer.
 - PDF/TXT/Markdown læses lokalt, højst seks filer på 10 MB hver. Højst de første 60 PDF-sider og 150.000 tegn pr. fil. Ingen OCR eller læsning af diagrammer.
 - Søgeord udvælger korte kildeuddrag; udvælgelsen kan overse relevante afsnit. Et vist kildenavn angiver et uddrag givet til modellen, ikke en verificeret kildehenvisning for hvert udsagn.
 - Konteksten er konservativt begrænset til under 3.000 UTF-8-bytes plus svar op til 640 tokens og chatformat, inden for modellens 4.096-token vindue. Lange spørgsmål afvises. Ændringer af fag, fokus eller materiale nulstiller chat og opgave. Notesiden er uafhængig.
-- Materiale, samtaler og noter ligger kun i fanens hukommelse. Gem tekst, før fanen lukkes. Der er ingen synkronisering, læreroversigt eller deling af brugerdata.
+- Materiale, samtaler og noter gemmes lokalt pr. fag. Ved lagerfejl vises besked om, at ændringer kun ligger i fanens hukommelse. Luk ikke fanen, før vigtige noter og samtaler er eksporteret. Fag gemmes på den aktuelle webadresse; localhost og den udgivne Vercel-adresse har separate lokale lagre. Brug din egen browserprofil på delte computere. Der er ingen synkronisering, læreroversigt eller deling af brugerdata.
 - Modelfiler kan gemmes i browserens cache og blive fjernet ved pladsmangel. At frigive GPU-hukommelse sletter ikke downloadcachen. Slet webstedets data i browseren for at fjerne cachen.
 - Modeldownload bruger Hugging Face / WebLLM-modelbibliotek på GitHub. Disse tjenester modtager almindelige downloadforespørgsler, men appen sender ikke brugerens spørgsmål eller materiale til dem. Ingen analyse- eller reklametjenester er tilføjet. Besøg på værten medfører almindelige webforespørgsler.
 - Internet er nødvendigt ved første download. Dette er ikke en fuld offline-PWA, og offline-opstart garanteres ikke.
@@ -51,5 +53,7 @@ npm run build
 Testene dækker modelregistre, UTF-8-grænser, udvælgelse af materiale og kontekstbudget. En rigtig modeldownload og et AI-svar på målenheden kræves desuden for at verificere GPU-forløbet. Der leveres ingen simulerede AI-svar.
 
 Under udviklingen er WebGPU, modeldownload og rigtig inferens afprøvet i browseren på denne computer. Qwen 3.5 2B gav korrekt slutsvar på en simpel ligning, men også en modstridende sætning i forklaringen; en biologisk øvelsesopgave krævede flere oplysninger end kildeuddraget gav. Tekstupload blev afprøvet. Kvaliteten er derfor eksperimentel og ikke godkendt til selvstændig undervisning eller bedømmelse. PDF-læsning, mobil-GPU og den største model kræver fortsat afprøvning på målenhederne.
+
+Fagopdateringen er testet med oprettelse af to fag, isolering af materiale/noter og genindlæsning fra IndexedDB. En rigtig modelbedømmelse blev valideret som karakter 7, vist med kildenavn og genfundet i fagets historik efter genindlæsning. Modellen kritiserede dog fejlagtigt en korrekt besvarelse og gav dermed et upålideligt karakterestimat. Testen bekræfter format og lagring, ikke vurderingens faglige korrekthed.
 
 Dokumentation: https://webllm.mlc.ai/docs/ og https://vercel.com/docs/deployments/git/vercel-for-github

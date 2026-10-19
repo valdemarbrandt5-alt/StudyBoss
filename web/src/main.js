@@ -1,16 +1,24 @@
 import './style.css';
 import { MODELS, buildMessages, visibleAnswer } from './study.js';
+import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
+import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
 
 const $ = id => document.getElementById(id);
 const state = { engine: null, worker: null, loading: false, busy: false, importing: false, supported: false, history: [], documents: [], exercise: '', stop: false, cancelLoad: null, failGeneration: null };
+state.initializing = true;
+state.workspace = { version: 1, courses: [], activeId: null };
+state.assessment = null; state.exerciseSources = [];
+let saveChain = Promise.resolve(), pendingSaves = 0, saveFailed = false, storageAvailable = true;
+const activeCourse = () => state.workspace.courses.find(course => course.id === state.workspace.activeId);
 const notice = text => { $('action-status').textContent = text; };
 const controls = () => {
   $('send').disabled = state.importing || (!state.engine && !state.busy);
   $('send').textContent = state.busy ? 'Stop svar ■' : 'Send spørgsmål ↑';
   for (const id of ['new-exercise', 'grade']) $(id).disabled = !state.engine || state.busy || state.importing;
-  for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat']) $(id).disabled = state.busy || state.loading || state.importing;
+  $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
+  for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'course-switch', 'add-course', 'course-name']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   $('model').disabled ||= !!state.engine;
-  for (const button of document.querySelectorAll('#file-list button, [data-prompt]')) button.disabled = state.busy || state.loading;
+  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open')) button.disabled = state.busy || state.loading || state.importing || state.initializing;
   $('load-model').disabled = !state.supported || !$('download-consent').checked || state.loading || state.busy || state.importing || !!state.engine;
   $('download-consent').disabled = state.loading || !!state.engine;
   $('unload').hidden = !state.engine;
@@ -32,9 +40,101 @@ function message(role, text = '', sources = []) {
 }
 function scrollMessages() { $('messages').scrollTop = $('messages').scrollHeight; }
 function resetContext() {
-  state.history = []; state.exercise = ''; $('exercise').hidden = true; $('feedback').hidden = true;
+  state.history = []; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise').hidden = true; $('feedback').hidden = true; $('answer').value = '';
   $('messages').replaceChildren(); message('assistant', 'Vi starter på en frisk. Hvad vil du gerne arbejde med?');
   notice('Samtale og øvelsesopgave er nulstillet til dit nye fag, fokus eller materiale.');
+  persist();
+}
+function sourceText(sources) { return sources?.length ? `Filuddrag givet til AI: ${sources.join(', ')}. Ikke hele dokumenterne.` : 'Ingen matchende filuddrag blev brugt. Svaret bygger på modellens generelle viden.'; }
+function fileCount(count) { return `${count} ${count === 1 ? 'fil' : 'filer'}`; }
+function captureCourse() {
+  const course = activeCourse(); if (!course) return;
+  Object.assign(course, { name: $('subject').value.trim() || course.name, topic: $('topic').value, documents: state.documents, history: state.history, notes: $('notes').value, exercise: state.exercise, exerciseSources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment });
+}
+function persist() {
+  if (state.initializing) return;
+  captureCourse(); renderCourses();
+  if (!storageAvailable) { saveFailed = true; return; }
+  const snapshot = structuredClone(state.workspace); pendingSaves++;
+  $('storage-status').textContent = 'Gemmer fag og materiale på denne enhed …';
+  saveChain = saveChain.then(() => writeWorkspace(snapshot)).then(() => {
+    saveFailed = false;
+  }).catch(() => {
+    saveFailed = true;
+    notice('Fagoversigten kunne ikke gemmes lokalt. Browserens lager kan være fuldt eller blokeret. Eksportér vigtige noter og samtaler før du lukker.');
+  }).finally(() => {
+    pendingSaves--;
+    $('storage-status').textContent = saveFailed ? 'Kun i denne fane: seneste ændringer er ikke gemt. Hold fanen åben.' : pendingSaves ? 'Gemmer …' : 'Gemt i denne browser · Fag og materiale deles ikke med andre enheder. Brug din egen browserprofil på delte computere.';
+  });
+}
+function renderAssessment(assessment) {
+  $('feedback').replaceChildren(); $('feedback').hidden = !assessment;
+  if (!assessment) return;
+  const title = document.createElement('strong'); title.className = 'grade-result'; title.textContent = `${gradeLabel(assessment.score)} · ${GRADE_NAMES[assessment.score]}`;
+  const warning = document.createElement('small'); warning.className = 'source-label'; warning.textContent = 'Vejledende AI-estimat på 7-trinsskalaen. Ikke en officiel karakter.';
+  const feedback = document.createElement('p'); feedback.textContent = assessment.feedback;
+  const solution = document.createElement('p'); solution.textContent = `Løsningsforslag:\n${assessment.solution}`;
+  const sources = document.createElement('small'); sources.className = 'source-label'; sources.textContent = sourceText(assessment.sources);
+  $('feedback').append(title, warning, feedback, solution, sources);
+}
+function viewMaterial(doc) { $('material-title').textContent = doc.name; $('material-text').textContent = doc.text; $('material-viewer').showModal(); }
+$('close-material').addEventListener('click', () => $('material-viewer').close());
+function renderCourses() {
+  $('course-switch').replaceChildren(); $('course-grid').replaceChildren();
+  for (const course of state.workspace.courses) {
+    const option = document.createElement('option'); option.value = course.id; option.textContent = course.name; $('course-switch').append(option);
+    const card = document.createElement('article'); card.className = `card course-card${course.id === state.workspace.activeId ? ' selected' : ''}`;
+    const title = document.createElement('h2'); title.textContent = course.name;
+    const count = document.createElement('p'); count.textContent = `${course.documents.length} materialefil${course.documents.length === 1 ? '' : 'er'} · ${course.attempts.length} bedømmelse${course.attempts.length === 1 ? '' : 'r'}`;
+    const topic = document.createElement('p'); topic.className = 'hint'; topic.textContent = course.topic || 'Tilføj et fokus, og kom i gang.';
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'secondary course-open'; open.textContent = course.id === state.workspace.activeId ? 'Valgt fag ✓' : 'Vælg fag ↗'; open.addEventListener('click', () => switchCourse(course.id));
+    card.append(title, count, topic, open); $('course-grid').append(card);
+  }
+  $('course-switch').value = state.workspace.activeId || '';
+  $('course-materials').replaceChildren();
+  const course = activeCourse(); if (!course) return;
+  $('course-material-heading').textContent = `${course.name} · ${fileCount(course.documents.length)}`;
+  if (!course.documents.length) { const empty = document.createElement('li'); empty.textContent = 'Intet materiale endnu. Tilføj filer i sidepanelet.'; $('course-materials').append(empty); }
+  for (const doc of course.documents) {
+    const li = document.createElement('li'); const label = document.createElement('span'); label.textContent = `${doc.name} · ${doc.text.length.toLocaleString('da-DK')} tegn læst`;
+    const view = document.createElement('button'); view.className = 'text-button'; view.textContent = 'Se læst tekst ↗'; view.addEventListener('click', () => viewMaterial(doc)); li.append(label, view); $('course-materials').append(li);
+  }
+  $('course-attempts').replaceChildren();
+  if (!course.attempts.length) $('course-attempts').textContent = 'Ingen bedømmelser i dette fag endnu.';
+  for (const attempt of [...course.attempts].reverse()) {
+    const detail = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = `${gradeLabel(attempt.score)} · ${attempt.topic || course.name} · ${new Date(attempt.created).toLocaleDateString('da-DK')}`;
+    const body = document.createElement('div'); body.className = 'prose'; body.textContent = `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${sourceText(attempt.sources)}`; detail.append(summary, body); $('course-attempts').append(detail);
+  }
+  controls();
+}
+function restoreCourse() {
+  const course = activeCourse(); if (!course) return;
+  $('subject').value = course.name; $('topic').value = course.topic; $('notes').value = course.notes; $('answer').value = course.answer;
+  state.documents = course.documents; state.history = course.history; state.exercise = course.exercise; state.exerciseSources = course.exerciseSources; state.assessment = course.assessment;
+  $('messages').replaceChildren();
+  if (!state.history.length) message('assistant', `Du arbejder nu med ${course.name}. Hvad vil du gerne forstå?`);
+  for (const item of state.history) { const output = message(item.role, item.content, item.role === 'assistant' ? item.sources : []); output.wrapper.classList.toggle('partial', !!item.partial); }
+  $('exercise').hidden = !state.exercise; $('exercise-question').textContent = state.exercise; $('exercise-sources').textContent = sourceText(state.exerciseSources);
+  renderAssessment(state.assessment); renderFiles(); renderCourses();
+}
+function switchCourse(id) {
+  if (state.busy || state.loading || state.importing || !state.workspace.courses.some(course => course.id === id)) return;
+  persist(); state.workspace.activeId = id; restoreCourse(); persist(); notice(`Valgt fag: ${activeCourse().name}`);
+}
+$('course-switch').addEventListener('change', event => switchCourse(event.target.value));
+$('course-form').addEventListener('submit', event => {
+  event.preventDefault(); if (state.busy || state.loading || state.importing || state.initializing) return;
+  const name = $('course-name').value.trim(); if (!name) return;
+  const existing = state.workspace.courses.find(course => course.name.toLocaleLowerCase('da') === name.toLocaleLowerCase('da'));
+  if (existing) { switchCourse(existing.id); notice('Faget findes allerede og er nu valgt.'); return; }
+  persist(); const course = newCourse(name); state.workspace.courses.push(course); state.workspace.activeId = course.id; $('course-name').value = ''; restoreCourse(); persist(); notice(`Faget ${name} er oprettet.`);
+});
+async function initializeCourses() {
+  try { state.workspace = await readWorkspace() || { version: 1, courses: [newCourse('Mit første fag')], activeId: null }; }
+  catch { storageAvailable = false; saveFailed = true; state.workspace.courses = [newCourse('Mit første fag')]; $('storage-status').textContent = 'Browserens gemte fag kunne ikke læses. Eksisterende data overskrives ikke; nye ændringer bliver kun i denne fane.'; }
+  state.workspace.activeId ||= state.workspace.courses[0]?.id;
+  if (!state.workspace.courses.length) { const course = newCourse('Mit første fag'); state.workspace.courses.push(course); state.workspace.activeId = course.id; }
+  state.initializing = false; restoreCourse(); persist();
 }
 function resetEngine() {
   state.worker?.terminate(); state.worker = null; state.engine = null; controls();
@@ -98,7 +198,7 @@ async function generate(options, onText) {
   try {
     const failed = new Promise((_, reject) => { state.failGeneration = reject; timer = setTimeout(() => reject(new Error('Svaret tog mere end tre minutter. Prøv en mindre model og et kortere spørgsmål.')), 180000); });
     const run = async () => {
-      const stream = await state.engine.chat.completions.create({ messages, stream: true, max_tokens: 640, temperature: 0.4, extra_body: { enable_thinking: false } });
+      const stream = await state.engine.chat.completions.create({ messages, stream: true, max_tokens: 640, temperature: options.schema ? 0.1 : 0.4, extra_body: { enable_thinking: false }, ...(options.schema ? { response_format: { type: 'json_object', schema: JSON.stringify(options.schema) } } : {}) });
       let lengthLimited = false;
       for await (const chunk of stream) {
         if (state.stop) { state.engine?.interruptGenerate(); break; }
@@ -139,9 +239,10 @@ $('chat-form').addEventListener('submit', async event => {
     if (!result) return;
     output.body.textContent = result.text || 'Intet svar. Du kan prøve igen.';
     output.wrapper.classList.toggle('partial', result.partial);
-    if (result.sources.length) { const source = document.createElement('small'); source.className = 'source-label'; source.textContent = `Udvalgte kildeuddrag: ${result.sources.join(', ')}. Ikke hele dokumentet.`; output.wrapper.append(source); }
-    state.history.push({ role: 'user', content: query }, { role: 'assistant', content: result.text, partial: result.partial });
+    const source = document.createElement('small'); source.className = 'source-label'; source.textContent = sourceText(result.sources); output.wrapper.append(source);
+    state.history.push({ role: 'user', content: query }, { role: 'assistant', content: result.text, partial: result.partial, sources: result.sources });
     state.history = state.history.slice(-20);
+    persist();
   } catch (error) { notice(error.message); if (output) output.body.textContent = 'Spørgsmålet kunne ikke behandles.'; }
 });
 $('question').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('chat-form').requestSubmit(); } });
@@ -151,7 +252,9 @@ document.querySelectorAll('[data-page]').forEach(button => button.addEventListen
   document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav === button));
 }));
 $('clear-chat').addEventListener('click', resetContext);
-for (const id of ['subject', 'topic']) $(id).addEventListener('change', resetContext);
+$('topic').addEventListener('change', resetContext);
+$('subject').addEventListener('change', () => { if (!$('subject').value.trim()) $('subject').value = activeCourse()?.name || 'Mit fag'; persist(); });
+for (const id of ['notes', 'answer', 'topic', 'subject']) $(id).addEventListener('input', persist);
 
 function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -164,12 +267,13 @@ $('export-chat').addEventListener('click', () => {
 $('export-notes').addEventListener('click', () => { if (!$('notes').value.trim()) { notice('Skriv først en note.'); return; } download('studyboss-noter.txt', $('notes').value); });
 
 function renderFiles() {
-  $('file-count').textContent = `${state.documents.length} filer`; $('file-list').replaceChildren();
+  $('file-count').textContent = fileCount(state.documents.length); $('file-list').replaceChildren();
   state.documents.forEach((doc, index) => {
     const li = document.createElement('li'); const span = document.createElement('span'); span.textContent = doc.name;
+    const view = document.createElement('button'); view.textContent = '↗'; view.setAttribute('aria-label', `Se ${doc.name}`); view.addEventListener('click', () => viewMaterial(doc));
     const remove = document.createElement('button'); remove.textContent = '×'; remove.setAttribute('aria-label', `Fjern ${doc.name}`);
     remove.addEventListener('click', () => { if (state.busy || state.loading) return; state.documents.splice(index, 1); renderFiles(); resetContext(); });
-    li.append(span, remove); $('file-list').append(li);
+    li.append(span, view, remove); $('file-list').append(li);
   }); controls();
 }
 $('files').addEventListener('change', async () => {
@@ -212,22 +316,36 @@ $('files').addEventListener('change', async () => {
 $('new-exercise').addEventListener('click', async () => {
   if (state.busy) return;
   if (!$('subject').value.trim() && !$('topic').value.trim() && !state.documents.length) { notice('Skriv et fag eller fokus i sidepanelet først.'); $('subject').focus(); return; }
-  $('exercise').hidden = false; $('exercise-question').textContent = 'Laver en opgave …'; $('feedback').hidden = true; $('answer').value = ''; state.exercise = '';
+  $('exercise').hidden = false; $('exercise-question').textContent = 'Laver en opgave …'; $('feedback').hidden = true; $('answer').value = ''; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise-sources').textContent = '';
   try {
     const result = await generate({ query: 'Lav én kort øvelsesopgave på højst 70 ord om mit fokus. Opgaven skal kunne løses med oplysningerne i kildeuddragene, hvis de findes. Ingen billeder. Medtag alle nødvendige oplysninger ved regneopgaver. Skriv kun opgaven, ikke kriterier, facit eller hints.', task: 'Du laver en øvelsesopgave. Afslør ikke svaret. Opfind ikke ekstra krav eller beregninger, der mangler data i materialet.' }, text => { $('exercise-question').textContent = text; });
-    if (result?.text && !result.partial) state.exercise = result.text;
+    if (result?.text && !result.partial) { state.exercise = result.text; state.exerciseSources = result.sources; $('exercise-sources').textContent = sourceText(result.sources); persist(); }
     else { $('exercise-question').textContent = result?.text || 'Der blev ikke lavet en opgave.'; notice('Opgaven blev ikke færdig. Lav en ny opgave, før du svarer.'); }
   } catch (error) { notice(error.message); }
+});
+$('own-exercise-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (state.busy || state.loading || state.importing || state.initializing) return;
+  const question = $('own-exercise').value.trim();
+  if (!question) return;
+  state.exercise = question; state.exerciseSources = []; state.assessment = null;
+  $('exercise').hidden = false; $('exercise-question').textContent = question;
+  $('exercise-sources').textContent = 'Din egen opgavetekst. Relevante materialefiler udvælges, når besvarelsen bedømmes.';
+  $('answer').value = ''; renderAssessment(null); persist(); notice('Din opgave er klar. Skriv din besvarelse nedenfor.');
 });
 $('answer-form').addEventListener('submit', async event => {
   event.preventDefault(); if (state.busy) return;
   if (!state.exercise) { notice('Lav først en færdig øvelsesopgave.'); return; }
   const answer = $('answer').value.trim(); if (!answer) { $('answer').focus(); return; }
-  $('feedback').hidden = false; $('feedback').textContent = 'Ser på din tankegang …';
+  $('feedback').hidden = false; $('feedback').textContent = 'Vurderer svaret på 7-trinsskalaen …'; state.assessment = null;
   try {
-    const result = await generate({ query: `Opgave:\n${state.exercise}\nMit svar:\n${answer}`, task: 'Giv vejledende feedback på elevsvaret: hvad er godt, hvad skal rettes og ét næste skridt. Vis korrekt fremgangsmåde. Ingen tal-karakter eller påstand om officiel bedømmelse.' }, text => { $('feedback').textContent = text; });
-    if (result && !result.text) $('feedback').textContent = 'Der kom ingen feedback. Prøv igen.';
+    const result = await generate({ query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (kort begrundelse, mangler og næste skridt), solution (løsningsforslag). Ingen officielle karakterer.`, schema: GRADE_SCHEMA }, () => {});
+    if (!result || result.partial) throw new Error('Bedømmelsen blev afbrudt. Ingen karakter er gemt; prøv igen.');
+    const assessment = { ...parseGrade(result.text), sources: result.sources, created: new Date().toISOString(), question: state.exercise, answer, topic: $('topic').value };
+    state.assessment = assessment;
+    activeCourse().attempts.push(assessment); activeCourse().attempts = activeCourse().attempts.slice(-100);
+    renderAssessment(assessment); persist();
   } catch (error) { notice(error.message); $('feedback').textContent = 'Feedback kunne ikke gives.'; }
 });
-window.addEventListener('beforeunload', event => { if (state.busy || state.history.length || state.documents.length || $('notes').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
-modelInfo(); controls(); checkGPU();
+window.addEventListener('beforeunload', event => { if (state.busy || state.importing || pendingSaves || saveFailed) { event.preventDefault(); event.returnValue = ''; } });
+modelInfo(); controls(); checkGPU(); initializeCourses();

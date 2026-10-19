@@ -2,7 +2,7 @@
 
 ## Ny: delbar browserudgave med brugerens egen GPU
 
-`web/` indeholder en separat webversion, hvor AI kører direkte i brugerens browser via WebGPU. Ingen betalt AI-tjeneste eller Ollama-installation er nødvendig for webversionen. Første modeldownload kræver internet og en egnet computer. Samtaler og materiale bliver i den åbne fane. Kvaliteten af de små modeller skal afprøves på det konkrete fag.
+`web/` indeholder en separat webversion, hvor AI kører direkte i brugerens browser via WebGPU. Ingen betalt AI-tjeneste eller Ollama-installation er nødvendig for webversionen. Første modeldownload kræver internet og en egnet computer. Mine fag samler materiale, samtaler, noter og vejledende bedømmelser pr. fag i browserens lokale lager. Data synkroniseres ikke mellem enheder. Kvaliteten af de små modeller skal afprøves på det konkrete fag.
 
 Se [web/README.md](web/README.md) for lokal start, begrænsninger og Vercel-opsætning. Projektets `vercel.json` er klar til at bygge denne webudgave. Python-appen nedenfor er fortsat en separat lokal mulighed.
 
@@ -32,13 +32,16 @@ Svarhistorik ligger i data/studyboss.db, backup i backups/. Mapperne uploades ik
 ## Funktioner
 
 * Forstå stoffet: samtale med opfølgninger og visuelle eksempler. De sidste tre beskedpar sendes med som kontekst.
-* Øv dig: opgaver, skjult foreløbigt facit, vurdering fra 0 til 4 og opfølgninger til feedback.
+* Øv dig: opgaver, skjult foreløbigt facit, vejledende karakter på 7-trinsskalaen (-3, 00, 02, 4, 7, 10, 12) og opfølgninger til feedback.
+* Mine fag: vælg og opret fag, se gemt undervisningsmateriale og den tekst, som er læst fra filerne. Svar og bedømmelser viser de filnavne, hvis uddrag blev givet til AI.
 * Regnebord: lommeregner, CNN outputstørrelse, softmax, netværksparametre og kladdenoter. Værktøjerne virker uden aktiv AI.
 * Din fremgang: lokal historik og foreslåede gentagelsesdatoer.
 
 Illustrationer tegnes lokalt fra strukturerede data: grafer, netværk og trinfigurer. Modellen skal inkludere en relevant illustration når den hjælper. Ingen genererede fotos. Aktiveringskurver har domæne -6 til 6 og leaky ReLU hældning 0.01. Modellen instrueres i kun at vælge dem til passende eksempler.
 
-Upload tekstbaseret PDF, TXT eller Markdown. Scanninger, billeder og diagrammer i PDF læses ikke. Løsninger uploades separat og bruges ved bedømmelse. Uploads, kladdenoter og samtaler lever i sessionen og skal genskabes efter genstart. Ændring af kursus, fokus eller materiale nulstiller samtale og aktuel opgave. Kladdenoter sendes ikke til AI. Søgeordsbaseret udvælgelse finder op til seks kildeafsnit og kan overse vigtige dele.
+Upload tekstbaseret PDF, TXT eller Markdown. Scanninger, billeder og diagrammer i PDF læses ikke. Løsninger uploades separat og bruges ved bedømmelse. Fag og udtrukket materialetekst gemmes i den lokale database. I Python-appen lever kladdenoter og samtaler fortsat i sessionen og skal genskabes efter genstart. Ændring af fag, fokus eller materiale nulstiller samtale og aktuel opgave. Kladdenoter sendes ikke til AI. Søgeordsbaseret udvælgelse finder op til seks kildeafsnit og kan overse vigtige dele.
+
+Karakterer er vejledende AI-estimater, aldrig officielle bedømmelser. Eksisterende 0–4-bedømmelser markeres som gammel skala og omregnes ikke; kun nye 7-trinsbedømmelser indgår i det nye karaktergennemsnit. Databasens historik bevares ved den additive skemaopdatering.
 
 AI facit, karakterer og figurer kan være forkerte. Kontroller mod officielle løsninger. Modellen og GPU hastigheden skal testes på målcomputeren. Brug ollama ps under et svar til at se GPU brug. Windows installation er ikke kørt i udviklingsmiljøet.
 
