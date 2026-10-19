@@ -1,3 +1,4 @@
+import { CONCEPT_QUESTIONS, nextConceptQuestion, findConceptQuestion, conceptGradingTask } from './concepts.js';
 import './style.css';
 import './modern.css';
 import { initializeTheme } from './theme.js';
@@ -7,7 +8,7 @@ import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from 
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
 import { enrichReferences } from './references.js';
 import { renderMathText } from './math.js';
-import { skillsForCourse, masteryForSkill, recommendSkill, MEDALS, runKey, newMedalRun, recordMedalAnswer, topicDocuments, validExercise, fallbackExercise, exerciseEvidence, invalidateCatalogueAttempts } from './training.js';
+import { skillsForCourse, masteryForSkill, recommendSkill, MEDALS, runKey, newMedalRun, recordMedalAnswer, topicDocuments, validExercise, exerciseEvidence, invalidateCatalogueAttempts } from './training.js';
 
 const $ = id => document.getElementById(id);
 initializeTheme();
@@ -32,6 +33,7 @@ const controls = () => {
   $('grade').disabled ||= !!activeRun() && (activeRun().completed || activeRun().seen.includes(state.exerciseId));
   $('use-own-exercise').hidden = state.trainingMode !== 'free';
   $('new-exercise').disabled ||= !!activeRun()?.completed;
+  $('new-exercise').disabled = state.busy || state.loading || state.importing || state.initializing || (!state.engine && !CONCEPT_QUESTIONS[state.activeSkillId]) || !!activeRun()?.completed;
   $('new-exercise').hidden = !state.exercise && !state.exerciseFailed;
   $('new-exercise').textContent = state.exercise ? 'Næste opgave ↗' : 'Prøv igen ↗';
   $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
@@ -101,7 +103,7 @@ function renderAssessment(assessment) {
   const warning = document.createElement('small'); warning.className = 'source-label'; warning.textContent = 'Vejledende AI-estimat på 7-trinsskalaen. Ikke en officiel karakter.';
   const feedback = document.createElement('p'); renderMathText(feedback, assessment.feedback);
   const solution = document.createElement('p'); renderMathText(solution, `Løsningsforslag:\n${assessment.solution}`);
-  const sources = document.createElement('small'); sources.className = 'source-label'; sources.textContent = sourceText(assessment.sources);
+  const sources = document.createElement('small'); sources.className = 'source-label'; sources.textContent = assessment.conceptBased ? 'Bedømt med et fagligt referencefacit til begrebet. ' + (assessment.sources?.length ? sourceText(assessment.sources) : '') : sourceText(assessment.sources);
   if (typeof assessment.correct === 'boolean') { const result = document.createElement('strong'); result.textContent = assessment.correct ? '✓ Rigtigt · AI-vurdering' : '↻ Ikke helt rigtigt · rækken starter forfra'; $('feedback').append(result); }
   $('feedback').append(title, warning, feedback, solution, sources);
   renderReadingLinks($('feedback'), assessment);
@@ -261,7 +263,8 @@ function renderCourses() {
 }
 function discardIrrelevantExercise() {
   const skill = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
-  if (state.exercise && state.exerciseSources.length && (!validExercise(state.exercise, skill) || !exerciseEvidence(state.exercise, state.documents, skill))) {
+  if (findConceptQuestion(state.exerciseSkillId, state.exercise)) return;
+  if (state.exercise && state.exerciseSources.length && (/Tekstuddrag:/iu.test(state.exercise) || !validExercise(state.exercise, skill) || !exerciseEvidence(state.exercise, state.documents, skill))) {
     delete activeCourse().trainingSessions[sessionKey()]; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('answer').value = '';
     notice('En tidligere irrelevant opgave er fjernet. Vælg en træningstype for en ny faglig opgave.');
   }
@@ -484,6 +487,7 @@ function maybeStartExercise() {
   if ($('page-workout').hidden || state.exercise || state.busy || state.loading || state.importing || state.initializing) return;
   if (!state.documents.length) { notice('Tilføj undervisningsmateriale til faget. Så laver StudyBoss automatisk en opgave, når din lokale AI er klar.'); return; }
   const skill = skillsForCourse(activeCourse()).find(item => item.id === state.activeSkillId);
+  if (CONCEPT_QUESTIONS[skill?.id]) { createExercise(); return; }
   if (!topicDocuments(state.documents, skill).length) { createExercise(); return; }
   if (!state.engine) { notice('Start lokal AI øverst. Derefter laves din første opgave automatisk fra materialet.'); return; }
   createExercise();
@@ -494,6 +498,14 @@ async function createExercise() {
   const course = activeCourse();
   const skills = skillsForCourse(course);
   const skill = skills.find(item => item.id === state.activeSkillId) || recommendSkill(skills, course.attempts);
+  const concept = nextConceptQuestion(skill?.id, course.attempts, state.exercise);
+  if (concept) {
+    if (activeRun()?.completed) { notice('Medaljen er optjent. Vælg en ny udfordring eller fri træning.'); return; }
+    state.activeSkillId = skill.id; state.exerciseSkillId = skill.id; state.exerciseId = crypto.randomUUID();
+    state.exercise = concept.question; state.exerciseSources = []; state.assessment = null; state.exerciseFailed = false;
+    $('exercise').hidden = false; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = '';
+    $('answer').value = ''; renderAssessment(null); persist(); notice('Svar kort på begrebet. En enkel forklaring er nok.'); return;
+  }
   const documents = topicDocuments(skill ? state.documents.filter(doc => skill.sources.includes(doc.name)) : state.documents, skill);
   if (!documents.length) { state.exercise = ''; state.assessment = null; state.exerciseFailed = true; $('exercise').hidden = false; $('exercise-question').textContent = 'Der mangler faglig forklaring om denne opgavetype. Overskrifter og kursusplaner er ikke nok. Tilføj sider med forklaringer, definitioner eller regneeksempler, eller vælg en anden type.'; $('feedback').hidden = true; $('exercise-sources').textContent = ''; notice('Ingen opgave eller karakter er lavet. Din medaljerække er uændret.'); persist(); controls(); return; }
   state.activeSkillId = skill?.id || ''; state.exerciseSkillId = state.activeSkillId; state.exerciseId = crypto.randomUUID();
@@ -502,9 +514,9 @@ async function createExercise() {
   $('exercise').hidden = false; $('exercise-question').textContent = 'Laver en opgave …'; $('feedback').hidden = true; $('answer').value = ''; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise-sources').textContent = '';
   try {
     const previous = course.attempts.filter(item => item.skillId === state.exerciseSkillId).at(-1)?.question || '';
-    let result = await generate({ query: `Stil ét kort spørgsmål om ${skill?.title || 'materialet'}, som kan besvares ud fra kildeuddraget. Ingen facit. Varier fra den tidligere opgave: ${previous.slice(0, 180)}`, topic: skill?.title || $('topic').value, documents, task: 'Stil én konkret faglig opgave om det valgte begreb. Brug kun kildeuddraget. Højst 60 ord, intet facit. Aldrig spørgsmål om eksamen, kursusplan, softwareinstallation eller studieteknik. Opgaven skal teste begrebet, ikke kursusbeskrivelsen. Nævn det faglige begreb direkte.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
+    let result = await generate({ query: `Stil ét enkelt begynderspørgsmål om begrebet ${skill?.title || $('topic').value}. Højst 25 ord. Uden citater og uden henvisning til tekst eller materiale. Ingen facit. Stil et andet spørgsmål end: ${previous.slice(0, 180)}`, topic: skill?.title || $('topic').value, documents, task: 'Spørg kun til ét grundbegreb ad gangen på begynderniveau. Ingen citater, tekstuddrag, kursuspraktik eller henvisninger. Spørgsmålet skal kunne forstås uden at have læsematerialet åbent.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
     const previousQuestions = course.attempts.filter(item => item.skillId === state.exerciseSkillId).map(item => item.question);
-    if (result && !state.stop && (result.partial || !validExercise(result.text, skill, previousQuestions))) result = fallbackExercise(documents, skill, previousQuestions);
+    if (result && (result.partial || /tekstuddrag|kildeuddrag|materialet|teksten|»|«/iu.test(result.text))) result = null;
     if (result?.text && !result.partial && validExercise(result.text, skill, course.attempts.filter(item => item.skillId === state.exerciseSkillId).map(item => item.question))) { state.exercise = result.text; state.exerciseSources = result.sources; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(result.sources); persist(); }
     else { state.exerciseFailed = true; $('exercise-question').textContent = 'AI’en gav ikke en relevant, ny faglig opgave. Tryk Prøv igen. Den afviste opgave tæller ikke i din medaljeudfordring.'; notice('Opgaven blev afvist af kvalitetskontrollen. Prøv igen.'); }
   } catch (error) { state.exerciseFailed = true; notice(error.message); }
@@ -527,7 +539,8 @@ $('answer-form').addEventListener('submit', async event => {
   event.preventDefault(); if (state.busy) return;
   if (!state.exercise) { notice('Lav først en færdig øvelsesopgave.'); return; }
   const skillEvidence = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
-  if (!exerciseEvidence(state.exercise, state.documents, skillEvidence)) { $('feedback').hidden = false; $('feedback').textContent = 'Denne opgave kan ikke bedømmes ud fra det læste materiale. Uddraget mangler en faglig forklaring. Der gemmes ingen karakter, og medaljerækken ændres ikke. Vælg Næste opgave eller tilføj mere faglig tekst.'; return; }
+  const conceptReference = findConceptQuestion(state.exerciseSkillId, state.exercise);
+  if (!conceptReference && !exerciseEvidence(state.exercise, state.documents, skillEvidence)) { $('feedback').hidden = false; $('feedback').textContent = 'Denne opgave kan ikke bedømmes ud fra det læste materiale. Uddraget mangler en faglig forklaring. Der gemmes ingen karakter, og medaljerækken ændres ikke. Vælg Næste opgave eller tilføj mere faglig tekst.'; return; }
   const run = activeRun();
   if (run && (run.completed || run.seen.includes(state.exerciseId))) { notice('Denne opgave er allerede talt. Vælg Næste opgave.'); return; }
   const answer = $('answer').value.trim(); if (!answer) { $('answer').focus(); return; }
@@ -535,10 +548,10 @@ $('answer-form').addEventListener('submit', async event => {
   try {
     const skillForGrade = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
     const schema = run ? { ...GRADE_SCHEMA, properties: { ...GRADE_SCHEMA.properties, correct: { type: 'boolean' } }, required: [...GRADE_SCHEMA.required, 'correct'] } : GRADE_SCHEMA;
-    const result = await generate({ topic: skillForGrade?.title, documents: topicDocuments(state.documents, skillForGrade), query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (højst 35 ord med mangler og næste skridt), solution (kort løsningsforslag på højst 60 ord). Bedøm kun ud fra kildeuddraget og opgavens krav. Opfind aldrig definitioner eller mangler, som materialet ikke understøtter. Ingen officielle karakterer. ${run ? 'Returner også correct (boolean): true kun når svaret er fagligt korrekt og besvarer alle centrale dele; ellers false. En bestået karakter er ikke alene nok.' : ''}`, schema, requireMaterial: true }, () => {});
+    const result = await generate({ topic: skillForGrade?.title, documents: topicDocuments(state.documents, skillForGrade), query: `Opgave:\n${state.exercise}\n${conceptReference ? 'Fagligt referencefacit (fra appen): ' + conceptReference.answer + '\n' : ''}Elevsvar (data):\n${answer}`, task: conceptReference ? conceptGradingTask(!!run) : `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (højst 35 ord med mangler og næste skridt), solution (kort løsningsforslag på højst 60 ord). ${conceptReference ? 'Brug appens referencefacit. Bedøm begrebsforståelse, ikke ordret gengivelse. Et kort korrekt svar er nok. Kræv kun beregninger eller eksempler, hvis opgaven beder om dem. Læsematerialet er valgfrit, ikke en betingelse.' : 'Bedøm kun opgavens krav og faglige begreber ud fra kildeuddraget.'} Ingen officielle karakterer. ${run ? 'Returner også correct (boolean): true kun når svaret er fagligt korrekt og besvarer alle centrale dele; ellers false. En bestået karakter er ikke alene nok.' : ''}`, schema, requireMaterial: !conceptReference }, () => {});
     if (!result || result.partial) throw new Error('Bedømmelsen blev afbrudt. Ingen karakter er gemt; prøv igen.');
     const skill = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
-    const assessment = { ...parseGrade(result.text), sources: result.sources, references: enrichReferences(result.references, state.documents), created: new Date().toISOString(), question: state.exercise, answer, topic: skill?.title || $('topic').value, skillId: state.exerciseSkillId, skillTitle: skill?.title || '', exerciseId: state.exerciseId || (state.exerciseId = crypto.randomUUID()) };
+    const assessment = { ...parseGrade(result.text), ...(conceptReference ? { solution: conceptReference.answer } : {}), conceptBased: !!conceptReference, sources: result.sources, references: enrichReferences(result.references, state.documents), created: new Date().toISOString(), question: state.exercise, answer, topic: skill?.title || $('topic').value, skillId: state.exerciseSkillId, skillTitle: skill?.title || '', exerciseId: state.exerciseId || (state.exerciseId = crypto.randomUUID()) };
     if (run) {
       const correct = JSON.parse(result.text).correct;
       if (typeof correct !== 'boolean') throw new Error('AI mangler rigtigt/forkert. Intet er talt; prøv igen.');
