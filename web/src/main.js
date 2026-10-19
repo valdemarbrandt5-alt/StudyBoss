@@ -1,6 +1,7 @@
 import './style.css';
 import './modern.css';
 import { initializeTheme } from './theme.js';
+import { extractPDF } from './pdf.js';
 import { MODELS, buildMessages, visibleAnswer } from './study.js';
 import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
@@ -11,6 +12,7 @@ const state = { engine: null, worker: null, loading: false, busy: false, importi
 state.initializing = true;
 state.workspace = { version: 1, courses: [], activeId: null };
 state.assessment = null; state.exerciseSources = [];
+state.exerciseFailed = false;
 let saveChain = Promise.resolve(), pendingSaves = 0, saveFailed = false, storageAvailable = true;
 const activeCourse = () => state.workspace.courses.find(course => course.id === state.workspace.activeId);
 const notice = text => { $('action-status').textContent = text; };
@@ -18,6 +20,8 @@ const controls = () => {
   $('send').disabled = state.importing || (!state.engine && !state.busy);
   $('send').textContent = state.busy ? 'Stop svar ■' : 'Send spørgsmål ↑';
   for (const id of ['new-exercise', 'grade']) $(id).disabled = !state.engine || state.busy || state.importing;
+  $('new-exercise').hidden = !state.exercise && !state.exerciseFailed;
+  $('new-exercise').textContent = state.exercise ? 'Næste opgave ↗' : 'Prøv igen ↗';
   $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
   for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'add-course', 'course-name', 'open-course-dialog']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   $('model').disabled ||= !!state.engine;
@@ -43,10 +47,11 @@ function message(role, text = '', sources = []) {
 }
 function scrollMessages() { $('messages').scrollTop = $('messages').scrollHeight; }
 function resetContext() {
-  state.history = []; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise').hidden = true; $('feedback').hidden = true; $('answer').value = '';
+  state.history = []; state.exercise = ''; state.exerciseSources = []; state.assessment = null; state.exerciseFailed = false; $('exercise').hidden = true; $('feedback').hidden = true; $('answer').value = '';
   $('messages').replaceChildren(); message('assistant', 'Vi starter på en frisk. Hvad vil du gerne arbejde med?');
   notice('Samtale og øvelsesopgave er nulstillet til dit nye fag, fokus eller materiale.');
   persist();
+  maybeStartExercise();
 }
 function sourceText(sources) { return sources?.length ? `Filuddrag givet til AI: ${sources.join(', ')}. Ikke hele dokumenterne.` : 'Ingen matchende filuddrag blev brugt. Svaret bygger på modellens generelle viden.'; }
 function fileCount(count) { return `${count} ${count === 1 ? 'fil' : 'filer'}`; }
@@ -124,6 +129,7 @@ function restoreCourse() {
   const course = activeCourse(); if (!course) return;
   $('subject').value = course.name; $('topic').value = course.topic; $('notes').value = course.notes; $('answer').value = course.answer;
   state.documents = course.documents; state.history = course.history; state.exercise = course.exercise; state.exerciseSources = course.exerciseSources; state.assessment = course.assessment;
+  state.exerciseFailed = false;
   $('messages').replaceChildren();
   if (!state.history.length) message('assistant', `Du arbejder nu med ${course.name}. Hvad vil du gerne forstå?`);
   for (const item of state.history) { const output = message(item.role, item.content, item.role === 'assistant' ? item.sources : []); output.wrapper.classList.toggle('partial', !!item.partial); }
@@ -135,6 +141,7 @@ function switchCourse(id) {
   const focusTab = document.activeElement?.getAttribute('role') === 'tab';
   persist(); state.workspace.activeId = id; restoreCourse(); persist(); notice(`Valgt fag: ${activeCourse().name}`);
   if (focusTab) document.getElementById(`course-tab-${id}`)?.focus();
+  maybeStartExercise();
 }
 $('open-course-dialog').addEventListener('click', () => { $('course-dialog').showModal(); $('course-name').focus(); });
 $('close-course-dialog').addEventListener('click', () => $('course-dialog').close());
@@ -152,6 +159,7 @@ async function initializeCourses() {
   state.workspace.activeId ||= state.workspace.courses[0]?.id;
   if (!state.workspace.courses.length) { const course = newCourse('Mit første fag'); state.workspace.courses.push(course); state.workspace.activeId = course.id; }
   state.initializing = false; restoreCourse(); persist();
+  maybeStartExercise();
 }
 function resetEngine() {
   state.worker?.terminate(); state.worker = null; state.engine = null; controls();
@@ -201,7 +209,7 @@ $('load-model').addEventListener('click', async () => {
     notice('Lokal AI er klar. Der bruges ingen betalt AI-tjeneste.'); $('settings').close();
   } catch (error) {
     resetEngine(); $('load-status').textContent = `${error.message}\nHvis modellen ikke passer i hukommelsen, vælg Lille og luk andre tunge faner. Browseren kan have slettet sin cache eller være begrænset af skolens indstillinger.`;
-  } finally { clearTimeout(timer); state.cancelLoad = null; state.loading = false; $('download-progress').hidden = true; controls(); }
+  } finally { clearTimeout(timer); state.cancelLoad = null; state.loading = false; $('download-progress').hidden = true; controls(); maybeStartExercise(); }
 });
 
 async function generate(options, onText) {
@@ -267,6 +275,7 @@ document.querySelectorAll('[data-prompt]').forEach(button => button.addEventList
 document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => {
   document.querySelectorAll('.page').forEach(page => { page.hidden = page.id !== `page-${button.dataset.page}`; });
   document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav === button));
+  if (button.dataset.page === 'practice') maybeStartExercise();
 }));
 $('clear-chat').addEventListener('click', resetContext);
 $('topic').addEventListener('change', resetContext);
@@ -300,7 +309,7 @@ $('files').addEventListener('change', async () => {
   for (const file of files) {
     try {
       if (state.documents.length >= 6) throw new Error('Der kan højst være 6 filer i denne prøveversion.');
-      if (file.size > 10 * 1024 * 1024) throw new Error('Filen er større end 10 MB.');
+      if (file.size > 50 * 1024 * 1024) throw new Error('Filen er større end 50 MB.');
       if (!/\.(pdf|txt|md)$/i.test(file.name)) throw new Error('Vælg PDF, TXT eller Markdown.');
       $('file-status').textContent = `Læser ${file.name} lokalt …`;
       let text;
@@ -308,18 +317,10 @@ $('files').addEventListener('change', async () => {
         const pdfjs = await import('pdfjs-dist');
         const { default: workerURL } = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
         pdfjs.GlobalWorkerOptions.workerSrc = workerURL;
-        const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false }).promise;
-        try {
-          const pages = []; let length = 0;
-          for (let i = 1; i <= Math.min(pdf.numPages, 60); i++) {
-            const page = await pdf.getPage(i); const content = await page.getTextContent();
-            const pageText = `Side ${i}\n${content.items.map(item => item.str || '').join(' ')}`;
-            pages.push(pageText); length += pageText.length; if (length >= 150000) break;
-          }
-          text = pages.join('\n\n');
-          if (!text.replace(/Side \d+/g, '').trim()) throw new Error('PDF’en har ingen læsbar tekst. Scanninger og billeder kræver tekstgenkendelse.');
-          if (pdf.numPages > 60 || length >= 150000) results.push(`${file.name}: kun de første højst 60 sider / 150.000 tegn blev læst.`);
-        } finally { await pdf.destroy(); }
+        const task = pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false });
+        const extracted = await extractPDF(task);
+        text = extracted.text;
+        if (extracted.truncated) results.push(`${file.name}: kun de første højst 60 sider / 150.000 tegn blev læst.`);
       } else { text = await file.text(); }
       if (!text.trim()) throw new Error('Filen er tom.');
       if (text.length > 150000) results.push(`${file.name}: teksten blev begrænset til 150.000 tegn.`);
@@ -329,17 +330,27 @@ $('files').addEventListener('change', async () => {
   state.importing = false; $('files').value = ''; renderFiles();
   if (added) resetContext();
   $('file-status').textContent = results.join('\n') || `${added} fil(er) læst lokalt. Kun korte, søgeordsbaserede uddrag bruges i hvert svar; relevante afsnit kan blive overset.`;
+  maybeStartExercise();
 });
-$('new-exercise').addEventListener('click', async () => {
-  if (state.busy) return;
-  if (!$('subject').value.trim() && !$('topic').value.trim() && !state.documents.length) { notice('Skriv et fag eller fokus i sidepanelet først.'); $('subject').focus(); return; }
+function maybeStartExercise() {
+  if ($('page-practice').hidden || state.exercise || state.busy || state.loading || state.importing || state.initializing) return;
+  if (!state.documents.length) { notice('Tilføj undervisningsmateriale til faget. Så laver StudyBoss automatisk en opgave, når din lokale AI er klar.'); return; }
+  if (!state.engine) { notice('Start lokal AI øverst. Derefter laves din første opgave automatisk fra materialet.'); return; }
+  createExercise();
+}
+async function createExercise() {
+  if (state.busy || state.loading || state.importing || state.initializing) return;
+  if (!state.documents.length) { notice('Tilføj undervisningsmateriale til faget først.'); return; }
+  state.exerciseFailed = false;
   $('exercise').hidden = false; $('exercise-question').textContent = 'Laver en opgave …'; $('feedback').hidden = true; $('answer').value = ''; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise-sources').textContent = '';
   try {
-    const result = await generate({ query: 'Lav én kort øvelsesopgave på højst 70 ord om mit fokus. Opgaven skal kunne løses med oplysningerne i kildeuddragene, hvis de findes. Ingen billeder. Medtag alle nødvendige oplysninger ved regneopgaver. Skriv kun opgaven, ikke kriterier, facit eller hints.', task: 'Du laver en øvelsesopgave. Afslør ikke svaret. Opfind ikke ekstra krav eller beregninger, der mangler data i materialet.' }, text => { $('exercise-question').textContent = text; });
+    const result = await generate({ query: 'Lav ét kort øvelsesspørgsmål på højst 70 ord ud fra kildeuddraget. Det skal kunne besvares fra uddraget. Ingen facit eller hints.', task: 'Brug kun materialet til ét selvstændigt spørgsmål. Ingen opfundne tal eller ekstra krav. Skriv kun spørgsmålet.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
     if (result?.text && !result.partial) { state.exercise = result.text; state.exerciseSources = result.sources; $('exercise-sources').textContent = sourceText(result.sources); persist(); }
-    else { $('exercise-question').textContent = result?.text || 'Der blev ikke lavet en opgave.'; notice('Opgaven blev ikke færdig. Lav en ny opgave, før du svarer.'); }
-  } catch (error) { notice(error.message); }
-});
+    else { state.exerciseFailed = true; $('exercise-question').textContent = result?.text || 'Der blev ikke lavet en opgave.'; notice('Opgaven blev ikke færdig. Prøv igen, før du svarer.'); }
+  } catch (error) { state.exerciseFailed = true; notice(error.message); }
+  finally { controls(); }
+}
+$('new-exercise').addEventListener('click', createExercise);
 $('own-exercise-form').addEventListener('submit', event => {
   event.preventDefault();
   if (state.busy || state.loading || state.importing || state.initializing) return;
