@@ -116,24 +116,26 @@ export function initializeProfile(app, services = {}) {
         const response = await (services.fetch || fetch)(SUPABASE_URL + '/auth/v1/settings', { headers: { apikey: SUPABASE_KEY } });
         if (!response.ok) throw new Error('AUTH_SETTINGS_UNAVAILABLE');
         const settings = await response.json();
-        if (!settings.external?.email || !settings.mailer_autoconfirm || settings.disable_signup) {
-          status('Oprettelse er ikke klar endnu. Projektets ejer skal aktivere mail-login og slå Confirm email fra i Supabase. Ingen bekræftelsesmail er sendt.'); return;
+        if (!settings.external?.email || settings.mailer_autoconfirm || settings.disable_signup) {
+          status('Profiloprettelse er ikke klar endnu. Mail-login med mailbekræftelse skal være aktiveret. Prøv igen senere.'); return;
         }
       }
       status(signup ? 'Opretter din profil …' : 'Logger ind …');
-      const { data, error } = signup ? await client.auth.signUp({ email, password }) : await client.auth.signInWithPassword({ email, password });
+      const { data, error } = signup ? await client.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + '/' } }) : await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
       $('profile-password').value = '';
-      status(data.session ? 'Åbner din profil …' : 'Profilen kræver mailbekræftelse. Projektets ejer skal gøre mail-login færdigt i Supabase.');
+      status(data.session ? 'Åbner din profil …' : 'Tjek din mail og spammappe for bekræftelseslinket. Hvis mailadressen kan oprettes, modtager du en mail. Bekræft den, og log derefter ind her.');
     } catch (error) {
       const messages = {
         invalid_credentials: 'Mail eller adgangskode er forkert. Har du ingen profil endnu, så vælg Opret profil.',
-        email_not_confirmed: 'Mailadressen er ikke bekræftet. Kontakt projektets ejer for at få mail-login gjort klar.',
+        email_not_confirmed: 'Bekræft først din mailadresse via linket i din mail. Tjek også spammappen.',
         user_already_exists: 'Der findes allerede en profil med den mail. Vælg Log ind.',
         weak_password: 'Vælg en længere og stærkere adgangskode.',
         signup_disabled: 'Oprettelse af nye profiler er ikke aktiveret endnu.',
         over_request_rate_limit: 'For mange forsøg. Vent lidt, og prøv igen.',
-        over_email_send_rate_limit: 'Mail-login mangler den sidste indstilling i Supabase. Kontakt projektets ejer.'
+        over_email_send_rate_limit: 'Der er sendt for mange mails. Vent lidt, og prøv igen.',
+        email_address_not_authorized: 'Mailtjenesten er ikke klar til nye brugere endnu. Du kan fortsætte uden login.',
+        unexpected_failure: 'Bekræftelsesmailen kunne ikke sendes. Mailtjenesten skal gøres klar af projektets ejer.'
       };
       status(messages[error.code] || 'Kunne ikke logge ind eller oprette profilen. Tjek forbindelsen, og prøv igen.');
     } finally { authenticating = false; $('profile-login').disabled = switching; $('profile-signup').disabled = switching; }

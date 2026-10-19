@@ -33,7 +33,8 @@ test('profile identity, offline cache and conflict resolution stay isolated acro
   } };
   globalThis.localStorage = { getItem: key => metadata.get(key) ?? null, setItem: (key, value) => metadata.set(key, value) };
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  let callback, currentUser, blocked = false, conflict = false, owner = 'current', autoconfirm = false, authError = null;
+  globalThis.location = { origin: 'https://study-boss-eta.vercel.app' };
+  let callback, currentUser, blocked = false, conflict = false, owner = 'current', autoconfirm = true, authError = null;
   const authCalls = [];
   const rpcCalls = [], cloud = new Map([
     ['A', { workspace: workspace('Account A'), revision: 4 }],
@@ -42,7 +43,7 @@ test('profile identity, offline cache and conflict resolution stay isolated acro
   const client = {
     auth: {
       onAuthStateChange(fn) { callback = fn; return { data: { subscription: { unsubscribe() {} } } }; },
-      async signUp(credentials) { authCalls.push({ method: 'signup', ...credentials }); return { data: { session: {} } }; },
+      async signUp(credentials) { authCalls.push({ method: 'signup', ...credentials }); return { data: { session: null } }; },
       async signInWithPassword(credentials) { authCalls.push({ method: 'login', ...credentials }); return authError ? { error: authError } : { data: { session: {} } }; },
       async getUser() { return { data: { user: { id: currentUser } } }; },
       async signOut() { currentUser = null; callback('SIGNED_OUT', null); return {}; }
@@ -77,14 +78,15 @@ test('profile identity, offline cache and conflict resolution stay isolated acro
     const emailInput = document.getElementById('profile-email'), passwordInput = document.getElementById('profile-password');
     emailInput.value = ' test@example.com '; passwordInput.value = 'secret password';
     await submit(true);
-    assert.equal(authCalls.length, 0, 'Signup must not send mail while confirmation is enabled');
-    assert.match(elements.get('profile-status').textContent, /Confirm email/);
-    autoconfirm = true; passwordInput.value = 'short';
+    assert.equal(authCalls.length, 0, 'Signup must not create unverified accounts when confirmation is disabled');
+    assert.match(elements.get('profile-status').textContent, /Mail-login med mailbekræftelse/);
+    autoconfirm = false; passwordInput.value = 'short';
     await submit(true);
     assert.equal(authCalls.length, 0, 'Weak new passwords are rejected before any account is created');
     passwordInput.value = '  secret password  ';
     await submit(true);
-    assert.deepEqual(authCalls.at(-1), { method: 'signup', email: 'test@example.com', password: '  secret password  ' });
+    assert.deepEqual(authCalls.at(-1), { method: 'signup', email: 'test@example.com', password: '  secret password  ', options: { emailRedirectTo: 'https://study-boss-eta.vercel.app/' } });
+    assert.match(elements.get('profile-status').textContent, /Tjek din mail/);
     assert.equal(passwordInput.value, '', 'Successful login removes the password from the form');
     passwordInput.value = 'bad password'; authError = { code: 'invalid_credentials' };
     await submit(false);

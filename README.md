@@ -76,4 +76,4 @@ Fortsættende varianter i de 12 faste emner laves med faglige skabeloner, nye ta
 
 ### Valgfri profil med mail og adgangskode
 
-Webversionen understøtter private Supabase-profiler med mail og adgangskode. Fag, udtrukket materialetekst, noter, samtaler og træningsdata gemmes lokalt først og synkroniseres online. Ved samtidige ændringer fra flere enheder bevares begge versioner efter brugerens valg. Mail-login skal være aktiveret med Confirm email slået fra i denne prøveversion; se [opsætningen](docs/email-login.md). Glemt adgangskode er ikke tilgængelig uden en mailtjeneste. AI-modellen downloades fortsat på hver enhed.
+Webversionen understøtter private Supabase-profiler med mail og adgangskode. Fag, udtrukket materialetekst, noter, samtaler og træningsdata gemmes lokalt først og synkroniseres online. Ved samtidige ændringer fra flere enheder bevares begge versioner efter brugerens valg. Mail-login skal være aktiveret med Confirm email slået til og en mailtjeneste tilsluttet; se [opsætningen](docs/email-login.md). Glemt adgangskode er ikke tilgængelig uden en mailtjeneste. AI-modellen downloades fortsat på hver enhed.
