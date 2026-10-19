@@ -103,3 +103,10 @@ export function conceptGradingTask(medal = false) {
     ' Score er tal fra [-3,0,2,4,7,10,12]. Et kort korrekt svar giver 12. Kræv ikke eksempler, formler eller ekstra detaljer, hvis de ikke efterspørges.' +
     ' Bedøm betydningen, ikke ordret gengivelse. Feedback højst 25 ord, solution højst 40 ord. Giv ikke 7, hvis feedback siger at alt er korrekt. Ingen krav om læsemateriale.';
 }
+
+export function randomTrainingSkill(skills, currentId = '', random = Math.random) {
+  const eligible = skills.filter(skill => CONCEPT_QUESTIONS[skill.id] && skill.sources.length);
+  const others = eligible.filter(skill => skill.id !== currentId);
+  const pool = others.length ? others : eligible;
+  return pool.length ? pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))] : null;
+}

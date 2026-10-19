@@ -210,3 +210,10 @@ progress { accent-color: var(--accent); }
 .workout-header h1 { font-size: clamp(26px, 3.3vw, 38px); }
 .workout-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 20px; }
 @media (max-width: 600px) { .workout-toolbar { align-items: flex-start; flex-direction: column; } }
+
+.web-reading { list-style: none; padding: 0; margin: 12px 0; }
+.web-reading li { margin: 10px 0; padding: 14px 16px; background: var(--surface-2); border-radius: 12px; border: 1px solid var(--line); }
+.web-reading a { color: var(--accent); font-size: 13px; font-weight: 650; text-decoration: none; overflow-wrap: anywhere; }
+.web-reading a:hover { text-decoration: underline; } .web-reading small { display: block; color: var(--muted); margin-top: 5px; font-size: 11px; }
+.training-toolbar { flex-wrap: wrap; } #random-training { margin-left: auto; }
+#topic-reading summary { cursor: pointer; }
