@@ -179,3 +179,19 @@ progress { accent-color: var(--accent); }
 .katex { color: inherit; font-size: 1.08em; }
 .katex-display { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: 6px 0; }
 @media (max-width: 700px) { .training-summary { gap: 7px; } .training-summary > div { padding: 14px 10px; } .training-summary strong { font-size: 25px; } .training-summary span { font-size: 9px; } .training-recommendation { align-items: flex-start; flex-direction: column; padding: 20px; } .skill-grid { grid-template-columns: 1fr; } .training-toolbar { gap: 10px; } .training-toolbar select { max-width: 150px; } }
+
+/* Compact training rows, with explicit medal challenges. */
+.skill-grid { display: flex; flex-direction: column; gap: 10px; }
+.skill-card { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; padding: 22px; }
+.skill-info { flex: 1; min-width: 180px; } .skill-info h3 { margin: 0 0 6px; }
+.skill-info .hint { margin: 0 0 10px; } .skill-info .mastery-badge { display: inline-block; }
+.skill-actions { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.medal-buttons { display: flex; gap: 8px; }
+.medal { min-width: 88px; padding: 10px 8px; border: 1px dashed var(--line); border-radius: 12px; background: var(--surface-2); color: var(--muted); display: flex; align-items: center; flex-direction: column; gap: 4px; cursor: pointer; }
+.medal-icon { font-size: 26px; border: 2px solid currentColor; border-radius: 50%; width: 38px; height: 38px; line-height: 32px; }
+.medal > span:not(.medal-icon) { font-size: 11px; font-weight: 700; } .medal small { font-size: 10px; }
+.medal:hover { border-color: var(--accent); background: var(--accent-soft); }
+.medal.earned { border-style: solid; } .medal.bronze.earned { color: #cf935e; } .medal.silver.earned { color: #9caac2; } .medal.gold.earned { color: #d7aa37; }
+.challenge-status { border-color: var(--accent); background: var(--accent-soft); font-weight: 650; }
+@media (max-width: 1000px) { .skill-card { align-items: flex-start; flex-direction: column; gap: 16px; } .skill-actions { width: 100%; justify-content: space-between; } }
+@media (max-width: 480px) { .medal { min-width: 70px; } .skill-actions { gap: 12px; } }

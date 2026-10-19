@@ -6,7 +6,7 @@ import { MODELS, buildMessages, visibleAnswer } from './study.js';
 import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
 import { renderMathText } from './math.js';
-import { skillsForCourse, masteryForSkill, recommendSkill } from './training.js';
+import { skillsForCourse, masteryForSkill, recommendSkill, MEDALS, runKey, newMedalRun, recordMedalAnswer, topicDocuments, validExercise, fallbackExercise } from './training.js';
 
 const $ = id => document.getElementById(id);
 initializeTheme();
@@ -15,14 +15,21 @@ state.initializing = true;
 state.workspace = { version: 1, courses: [], activeId: null };
 state.assessment = null; state.exerciseSources = [];
 state.exerciseFailed = false;
+state.trainingMode = 'free';
 state.activeSkillId = ''; state.exerciseSkillId = ''; state.exerciseId = '';
 let saveChain = Promise.resolve(), pendingSaves = 0, saveFailed = false, storageAvailable = true;
+const sessionKey = () => state.trainingMode !== 'free' ? runKey(state.activeSkillId, state.trainingMode) : state.exerciseSkillId || '__free__';
+const activeRun = () => state.trainingMode !== 'free' ? activeCourse()?.medalRuns[runKey(state.activeSkillId, state.trainingMode)] : null;
 const activeCourse = () => state.workspace.courses.find(course => course.id === state.workspace.activeId);
 const notice = text => { $('action-status').textContent = text; };
 const controls = () => {
   $('send').disabled = state.importing || (!state.engine && !state.busy);
   $('send').textContent = state.busy ? 'Stop svar ■' : 'Send spørgsmål ↑';
   for (const id of ['new-exercise', 'grade']) $(id).disabled = !state.engine || state.busy || state.importing;
+  $('grade').disabled ||= !state.exercise;
+  $('grade').disabled ||= !!activeRun() && (activeRun().completed || activeRun().seen.includes(state.exerciseId));
+  $('use-own-exercise').hidden = state.trainingMode !== 'free';
+  $('new-exercise').disabled ||= !!activeRun()?.completed;
   $('new-exercise').hidden = !state.exercise && !state.exerciseFailed;
   $('new-exercise').textContent = state.exercise ? 'Næste opgave ↗' : 'Prøv igen ↗';
   $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
@@ -37,7 +44,7 @@ const controls = () => {
   $('cancel-load').hidden = !state.loading;
   $('stop-generation').hidden = !state.busy;
   $('composer-hint').textContent = state.engine ? 'Svar behandles på denne computer.' : 'Start lokal AI øverst for at få svar.';
-  $('engine-status').textContent = state.loading ? 'Henter lokal AI …' : state.engine ? 'Lokal AI er klar' : 'Start lokal AI';
+  $('engine-status').textContent = state.loading ? 'Starter lokal AI …' : state.engine ? 'Lokal AI er klar' : 'Start lokal AI';
   $('status-dot').classList.toggle('ready', !!state.engine);
 };
 function message(role, text = '', sources = []) {
@@ -53,7 +60,7 @@ function scrollMessages() { $('messages').scrollTop = $('messages').scrollHeight
 function resetContext(options = {}) {
   if (activeCourse()) {
     if (options.invalidateTraining) activeCourse().trainingSessions = {};
-    else delete activeCourse().trainingSessions[state.exerciseSkillId || '__free__'];
+    else delete activeCourse().trainingSessions[sessionKey()];
   }
   state.history = []; state.exercise = ''; state.exerciseSources = []; state.assessment = null; state.exerciseFailed = false; $('exercise').hidden = true; $('feedback').hidden = true; $('answer').value = '';
   state.exerciseId = ''; state.exerciseSkillId = '';
@@ -66,8 +73,8 @@ function sourceText(sources) { return sources?.length ? `Filuddrag givet til AI:
 function fileCount(count) { return `${count} ${count === 1 ? 'fil' : 'filer'}`; }
 function captureCourse() {
   const course = activeCourse(); if (!course) return;
-  Object.assign(course, { name: $('subject').value.trim() || course.name, topic: $('topic').value, documents: state.documents, history: state.history, notes: $('notes').value, exercise: state.exercise, exerciseSources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment, activeSkillId: state.activeSkillId, exerciseSkillId: state.exerciseSkillId, exerciseId: state.exerciseId });
-  if (state.exercise) course.trainingSessions[state.exerciseSkillId || '__free__'] = { exercise: state.exercise, sources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment, exerciseId: state.exerciseId };
+  Object.assign(course, { name: $('subject').value.trim() || course.name, topic: $('topic').value, documents: state.documents, history: state.history, notes: $('notes').value, exercise: state.exercise, exerciseSources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment, activeSkillId: state.activeSkillId, exerciseSkillId: state.exerciseSkillId, exerciseId: state.exerciseId, trainingMode: state.trainingMode });
+  if (state.exercise) course.trainingSessions[sessionKey()] = { exercise: state.exercise, sources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment, exerciseId: state.exerciseId };
 }
 function persist() {
   if (state.initializing) return;
@@ -93,6 +100,7 @@ function renderAssessment(assessment) {
   const feedback = document.createElement('p'); renderMathText(feedback, assessment.feedback);
   const solution = document.createElement('p'); renderMathText(solution, `Løsningsforslag:\n${assessment.solution}`);
   const sources = document.createElement('small'); sources.className = 'source-label'; sources.textContent = sourceText(assessment.sources);
+  if (typeof assessment.correct === 'boolean') { const result = document.createElement('strong'); result.textContent = assessment.correct ? '✓ Rigtigt · AI-vurdering' : '↻ Ikke helt rigtigt · rækken starter forfra'; $('feedback').append(result); }
   $('feedback').append(title, warning, feedback, solution, sources);
 }
 function viewMaterial(doc) { $('material-title').textContent = doc.name; $('material-text').textContent = doc.text; $('material-viewer').showModal(); }
@@ -100,10 +108,10 @@ $('close-material').addEventListener('click', () => $('material-viewer').close()
 function renderTraining() {
   const course = activeCourse(); if (!course) return;
   const skills = skillsForCourse(course);
-  const mastered = skills.filter(skill => masteryForSkill(course.attempts, skill.id).status === 'mastered').length;
+  const mastered = Object.values(course.earnedMedals).reduce((sum, medals) => sum + medals.length, 0);
   $('training-summary').replaceChildren();
   const graded = new Set(course.attempts.filter(item => item.exerciseId && item.skillId).map(item => item.exerciseId)).size;
-  for (const [value, label] of [[skills.length, 'Opgavetyper'], [mastered, 'Foreløbigt mestret'], [graded, 'Bedømte opgaver i typerne']]) {
+  for (const [value, label] of [[skills.length, 'Opgavetyper'], [mastered, 'Optjente medaljer'], [graded, 'Bedømte opgaver i typerne']]) {
     const card = document.createElement('div'); const number = document.createElement('strong'); number.textContent = String(value); const caption = document.createElement('span'); caption.textContent = label; card.append(number, caption); $('training-summary').append(card);
   }
   $('training-recommendation').replaceChildren();
@@ -120,13 +128,26 @@ function renderTraining() {
     if (filter !== 'all' && filter !== mastery.status) continue;
     shown++;
     const card = document.createElement('article'); card.className = `card skill-card${skill.id === state.activeSkillId ? ' selected' : ''}`;
-    const status = document.createElement('span'); status.className = `mastery-badge ${mastery.status}`; status.textContent = mastery.label;
+    const status = document.createElement('span'); status.className = `mastery-badge ${mastery.status}`; status.textContent = mastery.status === 'mastered' ? 'Trænet' : mastery.label;
     const title = document.createElement('h3'); title.textContent = skill.title;
     const source = document.createElement('p'); source.className = 'hint'; source.textContent = `${skill.origin === 'manual' ? 'Din egen opgavetype' : skill.origin === 'keywords' ? 'Fundet med søgeord' : skill.origin === 'history' ? 'Fra din historik' : 'Generel materialetræning'} · ${skill.sources.length} ${skill.sources.length === 1 ? 'materialefil' : 'materialefiler'}`;
-    const progress = document.createElement('progress'); progress.max = 3; progress.value = mastery.passed; progress.setAttribute('aria-label', `${skill.title}: ${mastery.passed} af 3 seneste forskellige opgaver med mindst 7`);
-    const score = document.createElement('p'); score.className = 'skill-results'; score.textContent = mastery.recent.length ? `Seneste karakterer: ${mastery.recent.map(item => gradeLabel(item.score)).join(' · ')}\n${mastery.passed} af 3 seneste forskellige opgaver med mindst 7` : 'Ingen bedømmelser endnu — din mestring er ukendt.';
-    const train = document.createElement('button'); train.className = 'secondary train-skill'; train.textContent = course.trainingSessions[skill.id]?.exercise ? 'Fortsæt træning ↗' : 'Træn ↗'; train.disabled = !skill.sources.length; train.dataset.noMaterial = String(!skill.sources.length); train.addEventListener('click', () => selectSkill(skill.id));
-    card.append(status, title, source, progress, score, train); $('skill-grid').append(card);
+    const info = document.createElement('div'); info.className = 'skill-info'; info.append(title, source, status);
+    const actions = document.createElement('div'); actions.className = 'skill-actions';
+    const train = document.createElement('button'); train.className = 'secondary train-skill'; train.textContent = 'Fri træning ↗'; train.dataset.noMaterial = String(!skill.sources.length); train.addEventListener('click', () => selectSkill(skill.id)); actions.append(train);
+    const medals = document.createElement('div'); medals.className = 'medal-buttons';
+    for (const [tier, medal] of Object.entries(MEDALS)) {
+      const earned = course.earnedMedals[skill.id]?.includes(tier);
+      const run = course.medalRuns[runKey(skill.id, tier)];
+      const button = document.createElement('button'); button.className = `medal train-skill ${tier}${earned ? ' earned' : ''}`;
+      button.dataset.noMaterial = String(!skill.sources.length);
+      button.setAttribute('aria-label', `${medal.label}: ${medal.target} rigtige i træk · ${skill.title}${earned ? ' · optjent' : ''}`);
+      const icon = document.createElement('span'); icon.className = 'medal-icon'; icon.textContent = earned ? '★' : '☆';
+      const caption = document.createElement('span'); caption.textContent = `${medal.label} · ${medal.target}`;
+      const progress = document.createElement('small'); progress.textContent = earned ? 'Optjent ✓' : run ? `${run.streak}/${medal.target} i træk` : 'Ikke optjent';
+      button.append(icon, caption, progress); button.addEventListener('click', () => selectSkill(skill.id, tier)); medals.append(button);
+    }
+    actions.append(medals);
+    card.append(info, actions); $('skill-grid').append(card);
   }
   if (!shown) $('skill-grid').textContent = skills.length ? 'Ingen opgavetyper i dette filter.' : 'Ingen opgavetyper endnu. Tilføj materiale eller opret din egen type.';
   if (course.trainingSessions.__free__?.exercise && state.exerciseSkillId) {
@@ -134,18 +155,30 @@ function renderTraining() {
   }
   const uncategorized = course.attempts.filter(item => !item.skillId || !item.exerciseId).length;
   $('unclassified-attempts').textContent = uncategorized ? `${uncategorized} tidligere bedømmelser mangler en fast opgavetype eller opgave-id. De er bevaret i historikken, men tæller ikke automatisk som mestring.` : '';
+  renderChallenge();
   const exerciseSkill = skills.find(skill => skill.id === state.exerciseSkillId);
   $('exercise-type-label').textContent = exerciseSkill ? `DIN OPGAVE · ${exerciseSkill.title.toLocaleUpperCase('da')}` : 'DIN OPGAVE · FRI TRÆNING';
 }
-function selectSkill(id) {
+function renderChallenge() {
+  const run = activeRun(); const panel = $('challenge-status'); panel.hidden = !run;
+  if (!run) return;
+  const medal = MEDALS[state.trainingMode];
+  panel.textContent = run.completed ? `★ ${medal.label} optjent! ${run.target} rigtige i træk. Vælg en ny medalje eller fri træning.` : `${medal.label}-udfordring · ${run.streak}/${run.target} rigtige i træk. Forkert svar nulstiller rækken. AI vurderer rigtigt/forkert.`;
+}
+function selectSkill(id, medal = null) {
   if (state.busy || state.loading || state.importing || state.initializing) return;
   const course = activeCourse(); if (!course) return;
   if (id !== '__free__' && !skillsForCourse(course).some(skill => skill.id === id)) return;
   persist();
-  const session = course.trainingSessions[id];
+  state.trainingMode = medal || 'free';
+  const key = medal ? runKey(id, medal) : id;
+  if (medal && (!course.medalRuns[key] || course.medalRuns[key].completed)) {
+    course.medalRuns[key] = newMedalRun(medal); delete course.trainingSessions[key];
+  }
+  const session = course.trainingSessions[key];
   state.activeSkillId = id === '__free__' ? '' : id;
   state.exercise = session?.exercise || ''; state.exerciseSources = session?.sources || []; state.exerciseId = session?.exerciseId || ''; state.exerciseSkillId = state.exercise ? state.activeSkillId : ''; state.assessment = session?.assessment || null; state.exerciseFailed = false;
-  $('answer').value = session?.answer || ''; $('exercise').hidden = !state.exercise; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(state.exerciseSources); renderAssessment(state.assessment);
+  $('answer').value = session?.answer || ''; discardIrrelevantExercise(); $('exercise').hidden = !state.exercise; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(state.exerciseSources); renderAssessment(state.assessment);
   persist(); maybeStartExercise();
   document.querySelector('.practice-intro').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -195,12 +228,19 @@ function renderCourses() {
   renderTraining();
   controls();
 }
+function discardIrrelevantExercise() {
+  const skill = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
+  if (state.exercise && state.exerciseSources.length && !validExercise(state.exercise, skill)) {
+    delete activeCourse().trainingSessions[sessionKey()]; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('answer').value = '';
+    notice('En tidligere irrelevant opgave er fjernet. Vælg en træningstype for en ny faglig opgave.');
+  }
+}
 function restoreCourse() {
   const course = activeCourse(); if (!course) return;
   $('subject').value = course.name; $('topic').value = course.topic; $('notes').value = course.notes; $('answer').value = course.answer;
   state.documents = course.documents; state.history = course.history; state.exercise = course.exercise; state.exerciseSources = course.exerciseSources; state.assessment = course.assessment;
-  state.activeSkillId = course.activeSkillId; state.exerciseSkillId = course.exerciseSkillId; state.exerciseId = course.exerciseId || (course.exercise ? crypto.randomUUID() : '');
-  state.exerciseFailed = false;
+  state.trainingMode = course.trainingMode || 'free'; state.activeSkillId = course.activeSkillId; state.exerciseSkillId = course.exerciseSkillId; state.exerciseId = course.exerciseId || (course.exercise ? crypto.randomUUID() : '');
+  state.exerciseFailed = false; discardIrrelevantExercise();
   $('messages').replaceChildren();
   if (!state.history.length) message('assistant', `Du arbejder nu med ${course.name}. Hvad vil du gerne forstå?`);
   for (const item of state.history) { const output = message(item.role, item.content, item.role === 'assistant' ? item.sources : []); output.wrapper.classList.toggle('partial', !!item.partial); }
@@ -257,7 +297,7 @@ $('cancel-load').addEventListener('click', () => state.cancelLoad?.(new Error('I
 $('load-model').addEventListener('click', async () => {
   if (state.loading || state.busy || state.engine || !state.supported || !$('download-consent').checked) return;
   state.loading = true; controls(); $('download-progress').hidden = false; $('download-progress').value = 0;
-  $('load-status').textContent = 'Starter download. Første gang kan tage flere minutter …';
+  $('load-status').textContent = 'Starter AI fra browserens lager. Manglende filer hentes første gang …';
   let timer;
   try {
     const abort = new Promise((_, reject) => { state.cancelLoad = reject; timer = setTimeout(() => reject(new Error('Indlæsningen tog mere end 15 minutter. Kontrollér netforbindelsen, og prøv den lille model.')), 900000); });
@@ -416,16 +456,19 @@ async function createExercise() {
   const course = activeCourse();
   const skills = skillsForCourse(course);
   const skill = skills.find(item => item.id === state.activeSkillId) || recommendSkill(skills, course.attempts);
-  const documents = skill ? state.documents.filter(doc => skill.sources.includes(doc.name)) : state.documents;
+  const documents = topicDocuments(skill ? state.documents.filter(doc => skill.sources.includes(doc.name)) : state.documents, skill);
   if (!documents.length) { notice('Denne opgavetype mangler materiale. Tilføj materialet igen, eller vælg en anden type.'); return; }
   state.activeSkillId = skill?.id || ''; state.exerciseSkillId = state.activeSkillId; state.exerciseId = crypto.randomUUID();
+  if (activeRun()?.completed) { notice('Medaljen er optjent. Vælg en ny udfordring eller fri træning.'); return; }
   state.exerciseFailed = false;
   $('exercise').hidden = false; $('exercise-question').textContent = 'Laver en opgave …'; $('feedback').hidden = true; $('answer').value = ''; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise-sources').textContent = '';
   try {
     const previous = course.attempts.filter(item => item.skillId === state.exerciseSkillId).at(-1)?.question || '';
-    const result = await generate({ query: `Stil ét kort spørgsmål om ${skill?.title || 'materialet'}, som kan besvares ud fra kildeuddraget. Ingen facit. Varier fra den tidligere opgave: ${previous.slice(0, 180)}`, topic: skill?.title || $('topic').value, documents, task: 'Brug kun kildeuddraget. Skriv én opgave på højst 70 ord. Start med Forklar, Beregn, Beskriv eller Hvordan. Ingen opfundne oplysninger.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
-    if (result?.text && !result.partial) { state.exercise = result.text; state.exerciseSources = result.sources; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(result.sources); persist(); }
-    else { state.exerciseFailed = true; $('exercise-question').textContent = result?.text || 'Der blev ikke lavet en opgave.'; notice('Opgaven blev ikke færdig. Prøv igen, før du svarer.'); }
+    let result = await generate({ query: `Stil ét kort spørgsmål om ${skill?.title || 'materialet'}, som kan besvares ud fra kildeuddraget. Ingen facit. Varier fra den tidligere opgave: ${previous.slice(0, 180)}`, topic: skill?.title || $('topic').value, documents, task: 'Stil én konkret faglig opgave om det valgte begreb. Brug kun kildeuddraget. Højst 60 ord, intet facit. Aldrig spørgsmål om eksamen, kursusplan, softwareinstallation eller studieteknik. Opgaven skal teste begrebet, ikke kursusbeskrivelsen. Nævn det faglige begreb direkte.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
+    const previousQuestions = course.attempts.filter(item => item.skillId === state.exerciseSkillId).map(item => item.question);
+    if (result && !state.stop && (result.partial || !validExercise(result.text, skill, previousQuestions))) result = fallbackExercise(documents, skill, previousQuestions);
+    if (result?.text && !result.partial && validExercise(result.text, skill, course.attempts.filter(item => item.skillId === state.exerciseSkillId).map(item => item.question))) { state.exercise = result.text; state.exerciseSources = result.sources; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(result.sources); persist(); }
+    else { state.exerciseFailed = true; $('exercise-question').textContent = 'AI’en gav ikke en relevant, ny faglig opgave. Tryk Prøv igen. Den afviste opgave tæller ikke i din medaljeudfordring.'; notice('Opgaven blev afvist af kvalitetskontrollen. Prøv igen.'); }
   } catch (error) { state.exerciseFailed = true; notice(error.message); }
   finally { controls(); }
 }
@@ -433,6 +476,7 @@ $('new-exercise').addEventListener('click', createExercise);
 $('own-exercise-form').addEventListener('submit', event => {
   event.preventDefault();
   if (state.busy || state.loading || state.importing || state.initializing) return;
+  if (state.trainingMode !== 'free') return;
   const question = $('own-exercise').value.trim();
   if (!question) return;
   state.exercise = question; state.exerciseSources = []; state.assessment = null;
@@ -444,16 +488,27 @@ $('own-exercise-form').addEventListener('submit', event => {
 $('answer-form').addEventListener('submit', async event => {
   event.preventDefault(); if (state.busy) return;
   if (!state.exercise) { notice('Lav først en færdig øvelsesopgave.'); return; }
+  const run = activeRun();
+  if (run && (run.completed || run.seen.includes(state.exerciseId))) { notice('Denne opgave er allerede talt. Vælg Næste opgave.'); return; }
   const answer = $('answer').value.trim(); if (!answer) { $('answer').focus(); return; }
   $('feedback').hidden = false; $('feedback').textContent = 'Vurderer svaret på 7-trinsskalaen …'; state.assessment = null;
   try {
-    const result = await generate({ query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (kort begrundelse, mangler og næste skridt), solution (løsningsforslag). Ingen officielle karakterer.`, schema: GRADE_SCHEMA }, () => {});
+    const skillForGrade = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
+    const schema = run ? { ...GRADE_SCHEMA, properties: { ...GRADE_SCHEMA.properties, correct: { type: 'boolean' } }, required: [...GRADE_SCHEMA.required, 'correct'] } : GRADE_SCHEMA;
+    const result = await generate({ topic: skillForGrade?.title, documents: topicDocuments(state.documents, skillForGrade), query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (kort begrundelse, mangler og næste skridt), solution (løsningsforslag). Ingen officielle karakterer. ${run ? 'Returner også correct (boolean): true kun når svaret er fagligt korrekt og besvarer alle centrale dele; ellers false. En bestået karakter er ikke alene nok.' : ''}`, schema }, () => {});
     if (!result || result.partial) throw new Error('Bedømmelsen blev afbrudt. Ingen karakter er gemt; prøv igen.');
     const skill = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
     const assessment = { ...parseGrade(result.text), sources: result.sources, created: new Date().toISOString(), question: state.exercise, answer, topic: skill?.title || $('topic').value, skillId: state.exerciseSkillId, skillTitle: skill?.title || '', exerciseId: state.exerciseId || (state.exerciseId = crypto.randomUUID()) };
+    if (run) {
+      const correct = JSON.parse(result.text).correct;
+      if (typeof correct !== 'boolean') throw new Error('AI mangler rigtigt/forkert. Intet er talt; prøv igen.');
+      assessment.correct = correct;
+      recordMedalAnswer(run, state.exerciseId, correct);
+      if (run.completed) { const earned = activeCourse().earnedMedals[state.activeSkillId] ||= []; if (!earned.includes(state.trainingMode)) earned.push(state.trainingMode); }
+    }
     state.assessment = assessment;
     activeCourse().attempts.push(assessment); activeCourse().attempts = activeCourse().attempts.slice(-100);
-    renderAssessment(assessment); persist();
+    renderAssessment(assessment); persist(); controls();
   } catch (error) { notice(error.message); $('feedback').textContent = 'Feedback kunne ikke gives.'; }
 });
 window.addEventListener('beforeunload', event => { if (state.busy || state.importing || pendingSaves || saveFailed) { event.preventDefault(); event.returnValue = ''; } });
