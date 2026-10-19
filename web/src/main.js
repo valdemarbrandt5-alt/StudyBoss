@@ -1,9 +1,12 @@
 import './style.css';
+import './modern.css';
+import { initializeTheme } from './theme.js';
 import { MODELS, buildMessages, visibleAnswer } from './study.js';
 import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
 
 const $ = id => document.getElementById(id);
+initializeTheme();
 const state = { engine: null, worker: null, loading: false, busy: false, importing: false, supported: false, history: [], documents: [], exercise: '', stop: false, cancelLoad: null, failGeneration: null };
 state.initializing = true;
 state.workspace = { version: 1, courses: [], activeId: null };
@@ -16,7 +19,7 @@ const controls = () => {
   $('send').textContent = state.busy ? 'Stop svar ■' : 'Send spørgsmål ↑';
   for (const id of ['new-exercise', 'grade']) $(id).disabled = !state.engine || state.busy || state.importing;
   $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
-  for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'add-course', 'course-name']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
+  for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'add-course', 'course-name', 'open-course-dialog']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   $('model').disabled ||= !!state.engine;
   for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open, .course-tab')) button.disabled = state.busy || state.loading || state.importing || state.initializing;
   $('load-model').disabled = !state.supported || !$('download-consent').checked || state.loading || state.busy || state.importing || !!state.engine;
@@ -133,12 +136,15 @@ function switchCourse(id) {
   persist(); state.workspace.activeId = id; restoreCourse(); persist(); notice(`Valgt fag: ${activeCourse().name}`);
   if (focusTab) document.getElementById(`course-tab-${id}`)?.focus();
 }
+$('open-course-dialog').addEventListener('click', () => { $('course-dialog').showModal(); $('course-name').focus(); });
+$('close-course-dialog').addEventListener('click', () => $('course-dialog').close());
 $('course-form').addEventListener('submit', event => {
   event.preventDefault(); if (state.busy || state.loading || state.importing || state.initializing) return;
   const name = $('course-name').value.trim(); if (!name) return;
   const existing = state.workspace.courses.find(course => course.name.toLocaleLowerCase('da') === name.toLocaleLowerCase('da'));
-  if (existing) { switchCourse(existing.id); notice('Faget findes allerede og er nu valgt.'); return; }
+  if (existing) { switchCourse(existing.id); $('course-dialog').close(); notice('Faget findes allerede og er nu valgt.'); return; }
   persist(); const course = newCourse(name); state.workspace.courses.push(course); state.workspace.activeId = course.id; $('course-name').value = ''; restoreCourse(); persist(); notice(`Faget ${name} er oprettet.`);
+  $('course-dialog').close(); document.getElementById(`course-tab-${course.id}`)?.focus();
 });
 async function initializeCourses() {
   try { state.workspace = await readWorkspace() || { version: 1, courses: [newCourse('Mit første fag')], activeId: null }; }
