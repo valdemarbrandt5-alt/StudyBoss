@@ -2,9 +2,10 @@ import './style.css';
 import './modern.css';
 import { initializeTheme } from './theme.js';
 import { extractPDF } from './pdf.js';
-import { MODELS, buildMessages, visibleAnswer } from './study.js';
+import { MODELS, buildMessages, visibleAnswer, completeStructuredReply } from './study.js';
 import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
+import { enrichReferences } from './references.js';
 import { renderMathText } from './math.js';
 import { skillsForCourse, masteryForSkill, recommendSkill, MEDALS, runKey, newMedalRun, recordMedalAnswer, topicDocuments, validExercise, fallbackExercise } from './training.js';
 
@@ -102,8 +103,35 @@ function renderAssessment(assessment) {
   const sources = document.createElement('small'); sources.className = 'source-label'; sources.textContent = sourceText(assessment.sources);
   if (typeof assessment.correct === 'boolean') { const result = document.createElement('strong'); result.textContent = assessment.correct ? '✓ Rigtigt · AI-vurdering' : '↻ Ikke helt rigtigt · rækken starter forfra'; $('feedback').append(result); }
   $('feedback').append(title, warning, feedback, solution, sources);
+  renderReadingLinks($('feedback'), assessment);
 }
-function viewMaterial(doc) { $('material-title').textContent = doc.name; $('material-text').textContent = doc.text; $('material-viewer').showModal(); }
+function renderReadingLinks(container, assessment) {
+  const section = document.createElement('section'); section.className = 'reading-links';
+  const heading = document.createElement('h3'); heading.textContent = 'Læs op her'; section.append(heading);
+  const refs = assessment.references?.length ? assessment.references : (assessment.sources || []).map(name => ({ name }));
+  if (!refs.length) { const note = document.createElement('p'); note.className = 'hint'; note.textContent = 'Der blev ikke fundet et læseuddrag til denne bedømmelse.'; section.append(note); }
+  else {
+    const note = document.createElement('p'); note.className = 'hint'; note.textContent = assessment.references?.length ? 'Genlæs disse uddrag, som blev brugt ved bedømmelsen. De kan hjælpe med at forstå feedbacken.' : 'Denne tidligere bedømmelse gemte kun filnavne. Åbn materialet for at læse op.'; section.append(note);
+    const list = document.createElement('ul');
+    for (const ref of refs) {
+      const li = document.createElement('li'); const link = document.createElement('button'); link.className = 'text-button';
+      link.textContent = `${ref.name}${ref.page ? ` · side ${ref.page}` : ''} · ${ref.text ? 'Læs uddrag' : 'Åbn materiale'} ↗`;
+      const doc = state.documents.find(doc => doc.name === ref.name);
+      link.disabled = !doc && !ref.text;
+      link.addEventListener('click', () => viewMaterial(doc || { name: ref.name, text: 'Filen er ikke længere tilføjet til faget. Det gemte uddrag vises ovenfor.' }, ref.text ? ref : null));
+      li.append(link); if (ref.text) { const preview = document.createElement('p'); preview.className = 'hint'; preview.textContent = ref.text.slice(0, 180) + (ref.text.length > 180 ? ' …' : ''); li.append(preview); } list.append(li);
+    }
+    section.append(list);
+  }
+  container.append(section);
+}
+function viewMaterial(doc, reference = null) {
+  $('material-title').textContent = doc.name; $('material-text').textContent = doc.text;
+  $('material-reference').hidden = !reference;
+  $('material-reference-title').textContent = reference?.page ? `Relevant uddrag · side ${reference.page}` : 'Relevant uddrag';
+  renderMathText($('material-reference-text'), reference?.text || '');
+  $('material-full').open = !reference; $('material-viewer').showModal();
+}
 $('close-material').addEventListener('click', () => $('material-viewer').close());
 function renderTraining() {
   const course = activeCourse(); if (!course) return;
@@ -156,6 +184,8 @@ function renderTraining() {
   const uncategorized = course.attempts.filter(item => !item.skillId || !item.exerciseId).length;
   $('unclassified-attempts').textContent = uncategorized ? `${uncategorized} tidligere bedømmelser mangler en fast opgavetype eller opgave-id. De er bevaret i historikken, men tæller ikke automatisk som mestring.` : '';
   renderChallenge();
+  $('workout-title').textContent = skills.find(skill => skill.id === state.activeSkillId)?.title || 'Fri træning';
+  $('workout-mode').textContent = state.trainingMode === 'free' ? 'FRI TRÆNING' : `${MEDALS[state.trainingMode].label.toLocaleUpperCase('da')}-UDFORDRING`;
   const exerciseSkill = skills.find(skill => skill.id === state.exerciseSkillId);
   $('exercise-type-label').textContent = exerciseSkill ? `DIN OPGAVE · ${exerciseSkill.title.toLocaleUpperCase('da')}` : 'DIN OPGAVE · FRI TRÆNING';
 }
@@ -179,8 +209,7 @@ function selectSkill(id, medal = null) {
   state.activeSkillId = id === '__free__' ? '' : id;
   state.exercise = session?.exercise || ''; state.exerciseSources = session?.sources || []; state.exerciseId = session?.exerciseId || ''; state.exerciseSkillId = state.exercise ? state.activeSkillId : ''; state.assessment = session?.assessment || null; state.exerciseFailed = false;
   $('answer').value = session?.answer || ''; discardIrrelevantExercise(); $('exercise').hidden = !state.exercise; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(state.exerciseSources); renderAssessment(state.assessment);
-  persist(); maybeStartExercise();
-  document.querySelector('.practice-intro').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  persist(); showPage('workout'); maybeStartExercise();
 }
 $('skill-filter').addEventListener('change', () => { renderTraining(); controls(); });
 $('skill-form').addEventListener('submit', event => {
@@ -223,7 +252,7 @@ function renderCourses() {
   if (!course.attempts.length) $('course-attempts').textContent = 'Ingen bedømmelser i dette fag endnu.';
   for (const attempt of [...course.attempts].reverse()) {
     const detail = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = `${gradeLabel(attempt.score)} · ${attempt.topic || course.name} · ${new Date(attempt.created).toLocaleDateString('da-DK')}`;
-    const body = document.createElement('div'); body.className = 'prose'; renderMathText(body, `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${sourceText(attempt.sources)}`); detail.append(summary, body); $('course-attempts').append(detail);
+    const body = document.createElement('div'); body.className = 'prose'; renderMathText(body, `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${sourceText(attempt.sources)}`); renderReadingLinks(body, attempt); detail.append(summary, body); $('course-attempts').append(detail);
   }
   renderTraining();
   controls();
@@ -326,7 +355,7 @@ $('load-model').addEventListener('click', async () => {
 async function generate(options, onText) {
   if (!state.engine) { $('settings').showModal(); throw new Error('Start lokal AI, før du beder om et svar.'); }
   if (state.busy) return null;
-  const { messages, sources } = buildMessages({ ...options, subject: $('subject').value, topic: options.topic ?? $('topic').value, documents: options.documents ?? state.documents });
+  const { messages, sources, references } = buildMessages({ ...options, subject: $('subject').value, topic: options.topic ?? $('topic').value, documents: options.documents ?? state.documents });
   state.busy = true; state.stop = false; controls(); notice('AI’en arbejder på denne computer …');
   let text = '';
   let rawText = '';
@@ -334,7 +363,7 @@ async function generate(options, onText) {
   try {
     const failed = new Promise((_, reject) => { state.failGeneration = reject; timer = setTimeout(() => reject(new Error('Svaret tog mere end tre minutter. Prøv en mindre model og et kortere spørgsmål.')), 180000); });
     const run = async () => {
-      const stream = await state.engine.chat.completions.create({ messages, stream: true, max_tokens: 640, temperature: options.schema ? 0.1 : 0.4, extra_body: { enable_thinking: false }, ...(options.schema ? { response_format: { type: 'json_object', schema: JSON.stringify(options.schema) } } : {}) });
+      const stream = await state.engine.chat.completions.create({ messages, stream: true, max_tokens: options.schema ? 1024 : 640, temperature: options.schema ? 0.1 : 0.4, extra_body: { enable_thinking: false }, ...(options.schema ? { response_format: { type: 'json_object', schema: JSON.stringify(options.schema) } } : {}) });
       let lengthLimited = false;
       for await (const chunk of stream) {
         if (state.stop) { state.engine?.interruptGenerate(); break; }
@@ -342,16 +371,17 @@ async function generate(options, onText) {
         text = visibleAnswer(rawText);
         lengthLimited ||= chunk.choices[0]?.finish_reason === 'length';
         onText(text, sources);
+        if (completeStructuredReply(text, options.schema)) { state.engine.interruptGenerate(); lengthLimited = false; break; }
       }
       return lengthLimited;
     };
     const lengthLimited = await Promise.race([run(), failed]);
     if (!text.trim() && !state.stop) throw new Error('Modellen gav intet svar. Prøv et kortere spørgsmål.');
     notice(state.stop ? 'Svaret blev stoppet og kan være ufuldstændigt.' : lengthLimited ? 'Svaret nåede længdegrænsen. Bed om en kortere forklaring eller et enkelt deltrin.' : '');
-    return { text, sources, partial: state.stop || lengthLimited };
+    return { text, sources, references, partial: state.stop || lengthLimited };
   } catch (error) {
     resetEngine(); notice(`AI’en blev afbrudt: ${error.message}\nStart lokal AI igen, eventuelt med en mindre model.`);
-    return { text, sources, partial: true };
+    return { text, sources, references, partial: true };
   } finally { clearTimeout(timer); state.failGeneration = null; state.busy = false; controls(); }
 }
 function stopGeneration() {
@@ -384,11 +414,14 @@ $('chat-form').addEventListener('submit', async event => {
 });
 $('question').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('chat-form').requestSubmit(); } });
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { $('question').value = button.dataset.prompt; $('question').focus(); if (!state.engine) $('settings').showModal(); }));
-document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => {
-  document.querySelectorAll('.page').forEach(page => { page.hidden = page.id !== `page-${button.dataset.page}`; });
-  document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav === button));
-  if (button.dataset.page === 'practice') maybeStartExercise();
-}));
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(page => { page.hidden = page.id !== `page-${name}`; });
+  document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav.dataset.page === (name === 'workout' ? 'practice' : name)));
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  if (name === 'workout') $('workout-title').focus({ preventScroll: true });
+}
+document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.page)));
+$('back-to-training').addEventListener('click', () => { persist(); showPage('practice'); });
 $('clear-chat').addEventListener('click', resetContext);
 $('topic').addEventListener('change', resetContext);
 $('subject').addEventListener('change', () => { if (!$('subject').value.trim()) $('subject').value = activeCourse()?.name || 'Mit fag'; persist(); });
@@ -445,7 +478,7 @@ $('files').addEventListener('change', async () => {
   maybeStartExercise();
 });
 function maybeStartExercise() {
-  if ($('page-practice').hidden || state.exercise || state.busy || state.loading || state.importing || state.initializing) return;
+  if ($('page-workout').hidden || state.exercise || state.busy || state.loading || state.importing || state.initializing) return;
   if (!state.documents.length) { notice('Tilføj undervisningsmateriale til faget. Så laver StudyBoss automatisk en opgave, når din lokale AI er klar.'); return; }
   if (!state.engine) { notice('Start lokal AI øverst. Derefter laves din første opgave automatisk fra materialet.'); return; }
   createExercise();
@@ -495,10 +528,10 @@ $('answer-form').addEventListener('submit', async event => {
   try {
     const skillForGrade = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
     const schema = run ? { ...GRADE_SCHEMA, properties: { ...GRADE_SCHEMA.properties, correct: { type: 'boolean' } }, required: [...GRADE_SCHEMA.required, 'correct'] } : GRADE_SCHEMA;
-    const result = await generate({ topic: skillForGrade?.title, documents: topicDocuments(state.documents, skillForGrade), query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (kort begrundelse, mangler og næste skridt), solution (løsningsforslag). Ingen officielle karakterer. ${run ? 'Returner også correct (boolean): true kun når svaret er fagligt korrekt og besvarer alle centrale dele; ellers false. En bestået karakter er ikke alene nok.' : ''}`, schema }, () => {});
+    const result = await generate({ topic: skillForGrade?.title, documents: topicDocuments(state.documents, skillForGrade), query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (højst 35 ord med mangler og næste skridt), solution (kort løsningsforslag på højst 60 ord). Ingen officielle karakterer. ${run ? 'Returner også correct (boolean): true kun når svaret er fagligt korrekt og besvarer alle centrale dele; ellers false. En bestået karakter er ikke alene nok.' : ''}`, schema }, () => {});
     if (!result || result.partial) throw new Error('Bedømmelsen blev afbrudt. Ingen karakter er gemt; prøv igen.');
     const skill = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
-    const assessment = { ...parseGrade(result.text), sources: result.sources, created: new Date().toISOString(), question: state.exercise, answer, topic: skill?.title || $('topic').value, skillId: state.exerciseSkillId, skillTitle: skill?.title || '', exerciseId: state.exerciseId || (state.exerciseId = crypto.randomUUID()) };
+    const assessment = { ...parseGrade(result.text), sources: result.sources, references: enrichReferences(result.references, state.documents), created: new Date().toISOString(), question: state.exercise, answer, topic: skill?.title || $('topic').value, skillId: state.exerciseSkillId, skillTitle: skill?.title || '', exerciseId: state.exerciseId || (state.exerciseId = crypto.randomUUID()) };
     if (run) {
       const correct = JSON.parse(result.text).correct;
       if (typeof correct !== 'boolean') throw new Error('AI mangler rigtigt/forkert. Intet er talt; prøv igen.');
