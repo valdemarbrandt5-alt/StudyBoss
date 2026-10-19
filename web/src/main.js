@@ -5,6 +5,8 @@ import { extractPDF } from './pdf.js';
 import { MODELS, buildMessages, visibleAnswer } from './study.js';
 import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
+import { renderMathText } from './math.js';
+import { skillsForCourse, masteryForSkill, recommendSkill } from './training.js';
 
 const $ = id => document.getElementById(id);
 initializeTheme();
@@ -13,6 +15,7 @@ state.initializing = true;
 state.workspace = { version: 1, courses: [], activeId: null };
 state.assessment = null; state.exerciseSources = [];
 state.exerciseFailed = false;
+state.activeSkillId = ''; state.exerciseSkillId = ''; state.exerciseId = '';
 let saveChain = Promise.resolve(), pendingSaves = 0, saveFailed = false, storageAvailable = true;
 const activeCourse = () => state.workspace.courses.find(course => course.id === state.workspace.activeId);
 const notice = text => { $('action-status').textContent = text; };
@@ -23,9 +26,10 @@ const controls = () => {
   $('new-exercise').hidden = !state.exercise && !state.exerciseFailed;
   $('new-exercise').textContent = state.exercise ? 'Næste opgave ↗' : 'Prøv igen ↗';
   $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
+  for (const id of ['skill-filter', 'skill-name', 'add-skill']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'add-course', 'course-name', 'open-course-dialog']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   $('model').disabled ||= !!state.engine;
-  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open, .course-tab')) button.disabled = state.busy || state.loading || state.importing || state.initializing;
+  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open, .course-tab, .train-skill')) button.disabled = state.busy || state.loading || state.importing || state.initializing || button.dataset.noMaterial === 'true';
   $('load-model').disabled = !state.supported || !$('download-consent').checked || state.loading || state.busy || state.importing || !!state.engine;
   $('download-consent').disabled = state.loading || !!state.engine;
   $('unload').hidden = !state.engine;
@@ -39,15 +43,20 @@ const controls = () => {
 function message(role, text = '', sources = []) {
   const wrapper = document.createElement('article'); wrapper.className = `message ${role}`;
   const label = document.createElement('strong'); label.className = 'label'; label.textContent = role === 'user' ? 'DIG' : 'STUDYBOSS · LOKAL AI';
-  const body = document.createElement('div'); body.className = 'message-body'; body.textContent = text;
+  const body = document.createElement('div'); body.className = 'message-body'; renderMathText(body, text);
   wrapper.append(label, body);
   if (sources.length) { const source = document.createElement('small'); source.className = 'source-label'; source.textContent = `Uddrag sendt til modellen: ${sources.join(', ')}. Udvælgelsen kan overse relevante afsnit.`; wrapper.append(source); }
   $('messages').querySelector('.welcome')?.remove(); $('messages').append(wrapper);
   return { wrapper, body };
 }
 function scrollMessages() { $('messages').scrollTop = $('messages').scrollHeight; }
-function resetContext() {
+function resetContext(options = {}) {
+  if (activeCourse()) {
+    if (options.invalidateTraining) activeCourse().trainingSessions = {};
+    else delete activeCourse().trainingSessions[state.exerciseSkillId || '__free__'];
+  }
   state.history = []; state.exercise = ''; state.exerciseSources = []; state.assessment = null; state.exerciseFailed = false; $('exercise').hidden = true; $('feedback').hidden = true; $('answer').value = '';
+  state.exerciseId = ''; state.exerciseSkillId = '';
   $('messages').replaceChildren(); message('assistant', 'Vi starter på en frisk. Hvad vil du gerne arbejde med?');
   notice('Samtale og øvelsesopgave er nulstillet til dit nye fag, fokus eller materiale.');
   persist();
@@ -57,7 +66,8 @@ function sourceText(sources) { return sources?.length ? `Filuddrag givet til AI:
 function fileCount(count) { return `${count} ${count === 1 ? 'fil' : 'filer'}`; }
 function captureCourse() {
   const course = activeCourse(); if (!course) return;
-  Object.assign(course, { name: $('subject').value.trim() || course.name, topic: $('topic').value, documents: state.documents, history: state.history, notes: $('notes').value, exercise: state.exercise, exerciseSources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment });
+  Object.assign(course, { name: $('subject').value.trim() || course.name, topic: $('topic').value, documents: state.documents, history: state.history, notes: $('notes').value, exercise: state.exercise, exerciseSources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment, activeSkillId: state.activeSkillId, exerciseSkillId: state.exerciseSkillId, exerciseId: state.exerciseId });
+  if (state.exercise) course.trainingSessions[state.exerciseSkillId || '__free__'] = { exercise: state.exercise, sources: state.exerciseSources, answer: $('answer').value, assessment: state.assessment, exerciseId: state.exerciseId };
 }
 function persist() {
   if (state.initializing) return;
@@ -80,13 +90,72 @@ function renderAssessment(assessment) {
   if (!assessment) return;
   const title = document.createElement('strong'); title.className = 'grade-result'; title.textContent = `${gradeLabel(assessment.score)} · ${GRADE_NAMES[assessment.score]}`;
   const warning = document.createElement('small'); warning.className = 'source-label'; warning.textContent = 'Vejledende AI-estimat på 7-trinsskalaen. Ikke en officiel karakter.';
-  const feedback = document.createElement('p'); feedback.textContent = assessment.feedback;
-  const solution = document.createElement('p'); solution.textContent = `Løsningsforslag:\n${assessment.solution}`;
+  const feedback = document.createElement('p'); renderMathText(feedback, assessment.feedback);
+  const solution = document.createElement('p'); renderMathText(solution, `Løsningsforslag:\n${assessment.solution}`);
   const sources = document.createElement('small'); sources.className = 'source-label'; sources.textContent = sourceText(assessment.sources);
   $('feedback').append(title, warning, feedback, solution, sources);
 }
 function viewMaterial(doc) { $('material-title').textContent = doc.name; $('material-text').textContent = doc.text; $('material-viewer').showModal(); }
 $('close-material').addEventListener('click', () => $('material-viewer').close());
+function renderTraining() {
+  const course = activeCourse(); if (!course) return;
+  const skills = skillsForCourse(course);
+  const mastered = skills.filter(skill => masteryForSkill(course.attempts, skill.id).status === 'mastered').length;
+  $('training-summary').replaceChildren();
+  const graded = new Set(course.attempts.filter(item => item.exerciseId && item.skillId).map(item => item.exerciseId)).size;
+  for (const [value, label] of [[skills.length, 'Opgavetyper'], [mastered, 'Foreløbigt mestret'], [graded, 'Bedømte opgaver i typerne']]) {
+    const card = document.createElement('div'); const number = document.createElement('strong'); number.textContent = String(value); const caption = document.createElement('span'); caption.textContent = label; card.append(number, caption); $('training-summary').append(card);
+  }
+  $('training-recommendation').replaceChildren();
+  const suggested = recommendSkill(skills, course.attempts);
+  if (suggested) {
+    const text = document.createElement('div'); const label = document.createElement('small'); label.textContent = 'DIT NÆSTE SKRIDT'; const title = document.createElement('strong'); title.textContent = suggested.title;
+    const reason = document.createElement('span'); reason.textContent = masteryForSkill(course.attempts, suggested.id).status === 'review' ? 'Din seneste bedømmelse peger på, at mere øvelse kan hjælpe.' : 'En opgavetype fra dit materiale, du kan træne videre med.';
+    text.append(label, title, reason); const train = document.createElement('button'); train.className = 'primary train-skill'; train.textContent = 'Træn denne type ↗'; train.addEventListener('click', () => selectSkill(suggested.id)); $('training-recommendation').append(text, train);
+  } else $('training-recommendation').textContent = 'Tilføj materiale til faget, så finder vi forslag til opgavetyper.';
+  const filter = $('skill-filter').value;
+  $('skill-grid').replaceChildren(); let shown = 0;
+  for (const skill of skills) {
+    const mastery = masteryForSkill(course.attempts, skill.id);
+    if (filter !== 'all' && filter !== mastery.status) continue;
+    shown++;
+    const card = document.createElement('article'); card.className = `card skill-card${skill.id === state.activeSkillId ? ' selected' : ''}`;
+    const status = document.createElement('span'); status.className = `mastery-badge ${mastery.status}`; status.textContent = mastery.label;
+    const title = document.createElement('h3'); title.textContent = skill.title;
+    const source = document.createElement('p'); source.className = 'hint'; source.textContent = `${skill.origin === 'manual' ? 'Din egen opgavetype' : skill.origin === 'keywords' ? 'Fundet med søgeord' : skill.origin === 'history' ? 'Fra din historik' : 'Generel materialetræning'} · ${skill.sources.length} ${skill.sources.length === 1 ? 'materialefil' : 'materialefiler'}`;
+    const progress = document.createElement('progress'); progress.max = 3; progress.value = mastery.passed; progress.setAttribute('aria-label', `${skill.title}: ${mastery.passed} af 3 seneste forskellige opgaver med mindst 7`);
+    const score = document.createElement('p'); score.className = 'skill-results'; score.textContent = mastery.recent.length ? `Seneste karakterer: ${mastery.recent.map(item => gradeLabel(item.score)).join(' · ')}\n${mastery.passed} af 3 seneste forskellige opgaver med mindst 7` : 'Ingen bedømmelser endnu — din mestring er ukendt.';
+    const train = document.createElement('button'); train.className = 'secondary train-skill'; train.textContent = course.trainingSessions[skill.id]?.exercise ? 'Fortsæt træning ↗' : 'Træn ↗'; train.disabled = !skill.sources.length; train.dataset.noMaterial = String(!skill.sources.length); train.addEventListener('click', () => selectSkill(skill.id));
+    card.append(status, title, source, progress, score, train); $('skill-grid').append(card);
+  }
+  if (!shown) $('skill-grid').textContent = skills.length ? 'Ingen opgavetyper i dette filter.' : 'Ingen opgavetyper endnu. Tilføj materiale eller opret din egen type.';
+  if (course.trainingSessions.__free__?.exercise && state.exerciseSkillId) {
+    const resume = document.createElement('button'); resume.className = 'secondary train-skill'; resume.textContent = 'Fortsæt din tidligere frie opgave ↗'; resume.addEventListener('click', () => selectSkill('__free__')); $('skill-grid').append(resume);
+  }
+  const uncategorized = course.attempts.filter(item => !item.skillId || !item.exerciseId).length;
+  $('unclassified-attempts').textContent = uncategorized ? `${uncategorized} tidligere bedømmelser mangler en fast opgavetype eller opgave-id. De er bevaret i historikken, men tæller ikke automatisk som mestring.` : '';
+  const exerciseSkill = skills.find(skill => skill.id === state.exerciseSkillId);
+  $('exercise-type-label').textContent = exerciseSkill ? `DIN OPGAVE · ${exerciseSkill.title.toLocaleUpperCase('da')}` : 'DIN OPGAVE · FRI TRÆNING';
+}
+function selectSkill(id) {
+  if (state.busy || state.loading || state.importing || state.initializing) return;
+  const course = activeCourse(); if (!course) return;
+  if (id !== '__free__' && !skillsForCourse(course).some(skill => skill.id === id)) return;
+  persist();
+  const session = course.trainingSessions[id];
+  state.activeSkillId = id === '__free__' ? '' : id;
+  state.exercise = session?.exercise || ''; state.exerciseSources = session?.sources || []; state.exerciseId = session?.exerciseId || ''; state.exerciseSkillId = state.exercise ? state.activeSkillId : ''; state.assessment = session?.assessment || null; state.exerciseFailed = false;
+  $('answer').value = session?.answer || ''; $('exercise').hidden = !state.exercise; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(state.exerciseSources); renderAssessment(state.assessment);
+  persist(); maybeStartExercise();
+  document.querySelector('.practice-intro').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('skill-filter').addEventListener('change', () => { renderTraining(); controls(); });
+$('skill-form').addEventListener('submit', event => {
+  event.preventDefault(); if (state.busy || state.loading || state.importing || state.initializing) return;
+  const course = activeCourse(), title = $('skill-name').value.trim(); if (!course || !title) return;
+  const existing = skillsForCourse(course).find(skill => skill.title.toLocaleLowerCase('da') === title.toLocaleLowerCase('da'));
+  const id = existing?.id || crypto.randomUUID(); if (!existing) course.skills.push({ id, title }); $('skill-name').value = ''; selectSkill(id);
+});
 function renderCourses() {
   $('course-tabs').replaceChildren(); $('course-grid').replaceChildren();
   for (const course of state.workspace.courses) {
@@ -121,19 +190,21 @@ function renderCourses() {
   if (!course.attempts.length) $('course-attempts').textContent = 'Ingen bedømmelser i dette fag endnu.';
   for (const attempt of [...course.attempts].reverse()) {
     const detail = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = `${gradeLabel(attempt.score)} · ${attempt.topic || course.name} · ${new Date(attempt.created).toLocaleDateString('da-DK')}`;
-    const body = document.createElement('div'); body.className = 'prose'; body.textContent = `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${sourceText(attempt.sources)}`; detail.append(summary, body); $('course-attempts').append(detail);
+    const body = document.createElement('div'); body.className = 'prose'; renderMathText(body, `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${sourceText(attempt.sources)}`); detail.append(summary, body); $('course-attempts').append(detail);
   }
+  renderTraining();
   controls();
 }
 function restoreCourse() {
   const course = activeCourse(); if (!course) return;
   $('subject').value = course.name; $('topic').value = course.topic; $('notes').value = course.notes; $('answer').value = course.answer;
   state.documents = course.documents; state.history = course.history; state.exercise = course.exercise; state.exerciseSources = course.exerciseSources; state.assessment = course.assessment;
+  state.activeSkillId = course.activeSkillId; state.exerciseSkillId = course.exerciseSkillId; state.exerciseId = course.exerciseId || (course.exercise ? crypto.randomUUID() : '');
   state.exerciseFailed = false;
   $('messages').replaceChildren();
   if (!state.history.length) message('assistant', `Du arbejder nu med ${course.name}. Hvad vil du gerne forstå?`);
   for (const item of state.history) { const output = message(item.role, item.content, item.role === 'assistant' ? item.sources : []); output.wrapper.classList.toggle('partial', !!item.partial); }
-  $('exercise').hidden = !state.exercise; $('exercise-question').textContent = state.exercise; $('exercise-sources').textContent = sourceText(state.exerciseSources);
+  $('exercise').hidden = !state.exercise; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(state.exerciseSources);
   renderAssessment(state.assessment); renderFiles(); renderCourses();
 }
 function switchCourse(id) {
@@ -215,7 +286,7 @@ $('load-model').addEventListener('click', async () => {
 async function generate(options, onText) {
   if (!state.engine) { $('settings').showModal(); throw new Error('Start lokal AI, før du beder om et svar.'); }
   if (state.busy) return null;
-  const { messages, sources } = buildMessages({ ...options, subject: $('subject').value, topic: $('topic').value, documents: state.documents });
+  const { messages, sources } = buildMessages({ ...options, subject: $('subject').value, topic: options.topic ?? $('topic').value, documents: options.documents ?? state.documents });
   state.busy = true; state.stop = false; controls(); notice('AI’en arbejder på denne computer …');
   let text = '';
   let rawText = '';
@@ -263,6 +334,7 @@ $('chat-form').addEventListener('submit', async event => {
     const result = await generate({ query, history: state.history }, text => { output.body.textContent = text || 'Tænker …'; scrollMessages(); });
     if (!result) return;
     output.body.textContent = result.text || 'Intet svar. Du kan prøve igen.';
+    renderMathText(output.body, result.text || 'Intet svar. Du kan prøve igen.');
     output.wrapper.classList.toggle('partial', result.partial);
     const source = document.createElement('small'); source.className = 'source-label'; source.textContent = sourceText(result.sources); output.wrapper.append(source);
     state.history.push({ role: 'user', content: query }, { role: 'assistant', content: result.text, partial: result.partial, sources: result.sources });
@@ -328,7 +400,7 @@ $('files').addEventListener('change', async () => {
     } catch (error) { results.push(`${file.name}: ${error.message}`); }
   }
   state.importing = false; $('files').value = ''; renderFiles();
-  if (added) resetContext();
+  if (added) resetContext({ invalidateTraining: true });
   $('file-status').textContent = results.join('\n') || `${added} fil(er) læst lokalt. Kun korte, søgeordsbaserede uddrag bruges i hvert svar; relevante afsnit kan blive overset.`;
   maybeStartExercise();
 });
@@ -341,11 +413,18 @@ function maybeStartExercise() {
 async function createExercise() {
   if (state.busy || state.loading || state.importing || state.initializing) return;
   if (!state.documents.length) { notice('Tilføj undervisningsmateriale til faget først.'); return; }
+  const course = activeCourse();
+  const skills = skillsForCourse(course);
+  const skill = skills.find(item => item.id === state.activeSkillId) || recommendSkill(skills, course.attempts);
+  const documents = skill ? state.documents.filter(doc => skill.sources.includes(doc.name)) : state.documents;
+  if (!documents.length) { notice('Denne opgavetype mangler materiale. Tilføj materialet igen, eller vælg en anden type.'); return; }
+  state.activeSkillId = skill?.id || ''; state.exerciseSkillId = state.activeSkillId; state.exerciseId = crypto.randomUUID();
   state.exerciseFailed = false;
   $('exercise').hidden = false; $('exercise-question').textContent = 'Laver en opgave …'; $('feedback').hidden = true; $('answer').value = ''; state.exercise = ''; state.exerciseSources = []; state.assessment = null; $('exercise-sources').textContent = '';
   try {
-    const result = await generate({ query: 'Lav ét kort øvelsesspørgsmål på højst 70 ord ud fra kildeuddraget. Det skal kunne besvares fra uddraget. Ingen facit eller hints.', task: 'Brug kun materialet til ét selvstændigt spørgsmål. Ingen opfundne tal eller ekstra krav. Skriv kun spørgsmålet.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
-    if (result?.text && !result.partial) { state.exercise = result.text; state.exerciseSources = result.sources; $('exercise-sources').textContent = sourceText(result.sources); persist(); }
+    const previous = course.attempts.filter(item => item.skillId === state.exerciseSkillId).at(-1)?.question || '';
+    const result = await generate({ query: `Stil ét kort spørgsmål om ${skill?.title || 'materialet'}, som kan besvares ud fra kildeuddraget. Ingen facit. Varier fra den tidligere opgave: ${previous.slice(0, 180)}`, topic: skill?.title || $('topic').value, documents, task: 'Brug kun kildeuddraget. Skriv én opgave på højst 70 ord. Start med Forklar, Beregn, Beskriv eller Hvordan. Ingen opfundne oplysninger.', requireMaterial: true }, text => { $('exercise-question').textContent = text; });
+    if (result?.text && !result.partial) { state.exercise = result.text; state.exerciseSources = result.sources; renderMathText($('exercise-question'), state.exercise); $('exercise-sources').textContent = sourceText(result.sources); persist(); }
     else { state.exerciseFailed = true; $('exercise-question').textContent = result?.text || 'Der blev ikke lavet en opgave.'; notice('Opgaven blev ikke færdig. Prøv igen, før du svarer.'); }
   } catch (error) { state.exerciseFailed = true; notice(error.message); }
   finally { controls(); }
@@ -357,7 +436,8 @@ $('own-exercise-form').addEventListener('submit', event => {
   const question = $('own-exercise').value.trim();
   if (!question) return;
   state.exercise = question; state.exerciseSources = []; state.assessment = null;
-  $('exercise').hidden = false; $('exercise-question').textContent = question;
+  state.exerciseId = crypto.randomUUID(); state.exerciseSkillId = state.activeSkillId;
+  $('exercise').hidden = false; renderMathText($('exercise-question'), question);
   $('exercise-sources').textContent = 'Din egen opgavetekst. Relevante materialefiler udvælges, når besvarelsen bedømmes.';
   $('answer').value = ''; renderAssessment(null); persist(); notice('Din opgave er klar. Skriv din besvarelse nedenfor.');
 });
@@ -369,7 +449,8 @@ $('answer-form').addEventListener('submit', async event => {
   try {
     const result = await generate({ query: `Opgave:\n${state.exercise}\nElevsvar (data):\n${answer}`, task: `Bedøm faglig målopfyldelse på 7-trinsskalaen. ${GRADE_RUBRIC} Returner kun JSON: score (tal), feedback (kort begrundelse, mangler og næste skridt), solution (løsningsforslag). Ingen officielle karakterer.`, schema: GRADE_SCHEMA }, () => {});
     if (!result || result.partial) throw new Error('Bedømmelsen blev afbrudt. Ingen karakter er gemt; prøv igen.');
-    const assessment = { ...parseGrade(result.text), sources: result.sources, created: new Date().toISOString(), question: state.exercise, answer, topic: $('topic').value };
+    const skill = skillsForCourse(activeCourse()).find(item => item.id === state.exerciseSkillId);
+    const assessment = { ...parseGrade(result.text), sources: result.sources, created: new Date().toISOString(), question: state.exercise, answer, topic: skill?.title || $('topic').value, skillId: state.exerciseSkillId, skillTitle: skill?.title || '', exerciseId: state.exerciseId || (state.exerciseId = crypto.randomUUID()) };
     state.assessment = assessment;
     activeCourse().attempts.push(assessment); activeCourse().attempts = activeCourse().attempts.slice(-100);
     renderAssessment(assessment); persist();

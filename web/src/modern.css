@@ -146,3 +146,36 @@ progress { accent-color: var(--accent); }
   .course-create > div { flex-direction: column; }
   .card { padding: 22px; }
 }
+
+.training-overview { margin-bottom: 30px; }
+.training-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; margin: 22px 0; }
+.training-summary > div { padding: 20px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+.training-summary strong { display: block; font-size: 30px; letter-spacing: -1px; color: var(--accent); }
+.training-summary span { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; }
+.training-recommendation { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 16px; margin-bottom: 28px; }
+.training-recommendation small { display: block; font-size: 9px; letter-spacing: 1.5px; color: var(--accent); font-weight: 700; }
+.training-recommendation strong { display: block; font-size: 19px; margin: 8px 0; }
+.training-recommendation span { display: block; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.training-recommendation button { flex-shrink: 0; }
+.training-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.training-toolbar h2 { font-size: 20px; letter-spacing: -.6px; }
+.training-toolbar select { width: auto; max-width: 200px; font-size: 12px; }
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin: 20px 0; }
+.skill-card { margin: 0; display: flex; flex-direction: column; gap: 12px; padding: 22px; }
+.skill-card.selected { border-color: var(--accent); }
+.skill-card h3 { margin: 0; font-size: 17px; line-height: 1.4; letter-spacing: -.4px; }
+.skill-card p { margin: 0; }
+.skill-card .skill-results { white-space: pre-line; font-size: 11px; line-height: 1.8; color: var(--muted); }
+.skill-card > button { margin-top: auto; align-self: flex-start; }
+.skill-card progress { margin: 0; height: 9px; border-radius: 9px; accent-color: var(--accent); }
+.mastery-badge { align-self: flex-start; border-radius: 6px; padding: 5px 8px; font-size: 10px; font-weight: 650; color: var(--muted); background: var(--surface-2); }
+.mastery-badge.learning { background: var(--accent-soft); color: var(--accent); }
+.mastery-badge.review { color: var(--warning); background: var(--warning-soft); }
+.mastery-badge.mastered { color: var(--success); background: var(--surface-2); border: 1px solid var(--success); }
+.add-skill { margin: 16px 0; padding: 17px 20px; }
+.add-skill summary, .mastery-explanation summary { cursor: pointer; font-size: 12px; }
+.add-skill form > div { display: flex; gap: 10px; margin-top: 10px; }
+.mastery-explanation { margin: 20px 0; color: var(--muted); }
+.katex { color: inherit; font-size: 1.08em; }
+.katex-display { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: 6px 0; }
+@media (max-width: 700px) { .training-summary { gap: 7px; } .training-summary > div { padding: 14px 10px; } .training-summary strong { font-size: 25px; } .training-summary span { font-size: 9px; } .training-recommendation { align-items: flex-start; flex-direction: column; padding: 20px; } .skill-grid { grid-template-columns: 1fr; } .training-toolbar { gap: 10px; } .training-toolbar select { max-width: 150px; } }

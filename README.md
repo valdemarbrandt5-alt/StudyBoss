@@ -50,3 +50,9 @@ Ingen automatisk dagskø, fuldt mastery system eller fjernadgang endnu. Den tidl
 ## Udvikling
 
 Kør `python -m unittest -v`. UI tests bruger Streamlit AppTest og kræver ingen aktiv model. Dokumentation: https://ollama.com/library/qwen3:14b og https://docs.streamlit.io.
+
+### Træningsoversigt i webversionen
+
+Øv dig viser opgavetyper foreslået ud fra søgeord i fagets materiale. Forslagene er ikke en fuldstændig pensumliste; egne typer kan tilføjes. Hver type gemmer sin igangværende opgave og besvarelse. Matematik med LaTeX-afgrænsere vises med KaTeX.
+
+En type markeres foreløbigt mestret, når de seneste tre forskellige bedømte opgaver alle har mindst 7. En ny bedømmelse af samme opgave tæller kun én gang. Lavere seneste karakter giver Øv mere. Vurderingen bygger på vejledende AI-karakterer. Tidligere besvarelser uden tilknyttet opgavetype bevares i historikken og tæller ikke med i mestring.

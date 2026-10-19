@@ -1,5 +1,5 @@
 export function newCourse(name, id = crypto.randomUUID()) {
-  return { id, name: String(name).trim().slice(0, 100), topic: '', documents: [], history: [], notes: '', exercise: '', exerciseSources: [], answer: '', assessment: null, attempts: [] };
+  return { id, name: String(name).trim().slice(0, 100), topic: '', documents: [], history: [], notes: '', exercise: '', exerciseSources: [], answer: '', assessment: null, attempts: [], skills: [], activeSkillId: '', exerciseSkillId: '', exerciseId: '', trainingSessions: {} };
 }
 export function normalizeWorkspace(input) {
   if (!input || input.version !== 1 || !Array.isArray(input.courses)) throw new Error('Fagoversigten har et ukendt format.');
