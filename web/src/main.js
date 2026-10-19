@@ -8,6 +8,7 @@ import { extractPDF } from './pdf.js';
 import { MODELS, buildMessages, visibleAnswer, completeStructuredReply } from './study.js';
 import { GRADE_SCHEMA, GRADE_RUBRIC, GRADE_NAMES, gradeLabel, parseGrade } from './grades.js';
 import { newCourse, readWorkspace, writeWorkspace } from './storage.js';
+import { initializeProfile } from './profile.js';
 import { enrichReferences } from './references.js';
 import { renderMathText } from './math.js';
 import { skillsForCourse, masteryForSkill, recommendSkill, MEDALS, runKey, newMedalRun, recordMedalAnswer, topicDocuments, validExercise, exerciseEvidence, invalidateCatalogueAttempts } from './training.js';
@@ -22,6 +23,7 @@ state.exerciseFailed = false;
 state.trainingMode = 'free'; state.randomTraining = false; state.reviewKey = null;
 state.activeSkillId = ''; state.exerciseSkillId = ''; state.exerciseId = '';
 let saveChain = Promise.resolve(), pendingSaves = 0, saveFailed = false, storageAvailable = true;
+let workspaceOwner = 'current', profile = null;
 const sessionKey = () => state.reviewKey ? '__review__' : state.randomTraining ? '__random__' : state.trainingMode !== 'free' ? runKey(state.activeSkillId, state.trainingMode) : state.exerciseSkillId || '__free__';
 const activeRun = () => state.trainingMode !== 'free' ? activeCourse()?.medalRuns[runKey(state.activeSkillId, state.trainingMode)] : null;
 const activeCourse = () => state.workspace.courses.find(course => course.id === state.workspace.activeId);
@@ -90,16 +92,17 @@ function persist() {
   if (state.initializing) return;
   captureCourse(); renderCourses();
   if (!storageAvailable) { saveFailed = true; return; }
-  const snapshot = structuredClone(state.workspace); pendingSaves++;
+  const snapshot = structuredClone(state.workspace), savedOwner = workspaceOwner; pendingSaves++;
   $('storage-status').textContent = 'Gemmer fag og materiale på denne enhed …';
-  saveChain = saveChain.then(() => writeWorkspace(snapshot)).then(() => {
+  saveChain = saveChain.then(() => writeWorkspace(snapshot, savedOwner)).then(() => {
     saveFailed = false;
+    profile?.saved(savedOwner);
   }).catch(() => {
     saveFailed = true;
     notice('Fagoversigten kunne ikke gemmes lokalt. Browserens lager kan være fuldt eller blokeret. Eksportér vigtige noter og samtaler før du lukker.');
   }).finally(() => {
     pendingSaves--;
-    $('storage-status').textContent = saveFailed ? 'Kun i denne fane: seneste ændringer er ikke gemt. Hold fanen åben.' : pendingSaves ? 'Gemmer …' : 'Gemt i denne browser · Fag og materiale deles ikke med andre enheder. Brug din egen browserprofil på delte computere.';
+    $('storage-status').textContent = saveFailed ? 'Kun i denne fane: seneste ændringer er ikke gemt. Hold fanen åben.' : pendingSaves ? 'Gemmer …' : workspaceOwner === 'current' ? 'Gemt i denne browser · Log ind for at gemme din profil online.' : 'Gemt på denne enhed · Se status for online gemning under Min profil.';
   });
 }
 function renderAssessment(assessment) {
@@ -621,5 +624,20 @@ $('answer-form').addEventListener('submit', async event => {
     renderAssessment(assessment); persist(); controls();
   } catch (error) { notice(error.message); $('feedback').textContent = 'Feedback kunne ikke gives.'; }
 });
-window.addEventListener('beforeunload', event => { if (state.busy || state.importing || pendingSaves || saveFailed) { event.preventDefault(); event.returnValue = ''; } });
-modelInfo(); controls(); checkGPU(); initializeCourses();
+window.addEventListener('beforeunload', event => { if (state.busy || state.importing || pendingSaves || saveFailed || profile?.pending()) { event.preventDefault(); event.returnValue = ''; } });
+modelInfo(); controls(); checkGPU();
+initializeCourses().then(() => {
+  profile = initializeProfile({
+    idle: () => !state.busy && !state.loading && !state.importing && !state.initializing && !pendingSaves,
+    flush: async () => { persist(); await saveChain; if (saveFailed) throw new Error('Kunne ikke gemme lokalt'); },
+    lock: locked => { state.initializing = locked; document.querySelector('.workspace').inert = locked; controls(); },
+    replace: async (workspace, owner) => {
+      workspace ||= { version: 1, courses: [], activeId: null };
+      if (!workspace.courses.length) { const course = newCourse('Mit første fag'); workspace.courses.push(course); workspace.activeId = course.id; }
+      await writeWorkspace(workspace, owner);
+      workspaceOwner = owner; state.workspace = workspace;
+      const previous = state.initializing; state.initializing = true;
+      restoreCourse(); state.initializing = previous; controls();
+    }
+  });
+});

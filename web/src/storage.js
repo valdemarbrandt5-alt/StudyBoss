@@ -20,12 +20,12 @@ function openDB() {
     request.onblocked = () => reject(new Error('Luk andre gamle StudyBoss-faner, og prøv igen.'));
   });
 }
-export async function readWorkspace() {
+export async function readWorkspace(owner = 'current') {
   const db = await openDB();
   try {
     const result = await new Promise((resolve, reject) => {
       const transaction = db.transaction('workspace', 'readonly');
-      const request = transaction.objectStore('workspace').get('current');
+      const request = transaction.objectStore('workspace').get(owner);
       transaction.oncomplete = () => resolve(request.result);
       transaction.onabort = () => reject(transaction.error);
       transaction.onerror = () => reject(transaction.error);
@@ -33,12 +33,12 @@ export async function readWorkspace() {
     return result ? normalizeWorkspace(result) : null;
   } finally { db.close(); }
 }
-export async function writeWorkspace(workspace) {
+export async function writeWorkspace(workspace, owner = 'current') {
   const db = await openDB();
   try {
     await new Promise((resolve, reject) => {
       const transaction = db.transaction('workspace', 'readwrite');
-      transaction.objectStore('workspace').put(workspace, 'current');
+      transaction.objectStore('workspace').put(workspace, owner);
       transaction.oncomplete = resolve;
       transaction.onabort = () => reject(transaction.error);
       transaction.onerror = () => reject(transaction.error);

@@ -72,3 +72,8 @@ AI-genererede spørgsmål til egne emner har et kort AI-genereret øvelsesfacit 
 Forkerte svar gemmes i en separat Øv fejl-samling, som ikke beskæres med historikkens seneste 100 bedømmelser. Oprindeligt spørgsmål, svar, feedback og reference bevares. Et senere korrekt svar markerer opgaven løst uden at slette den. Genøvelse foregår uden medaljepoint og overskriver ikke den almindelige træningskladde.
 
 Fortsættende varianter i de 12 faste emner laves med faglige skabeloner, nye tal og selvstændige situationer. Referencefacit beregnes efter de samme regler. Der er ingen fast antalgrænse; samme begreber kan genbesøges i nye varianter. Det undgår at gøre fortsættelsen afhængig af stabil fri AI-generering. Nye emner uden skabelon har fortsat AI-genererede opgaver og vejledende facit.
+
+
+### Valgfri profil med Google-login
+
+Webversionen understøtter private Supabase-profiler med Google-login. Fag, udtrukket materialetekst, noter, samtaler og træningsdata gemmes lokalt først og synkroniseres online. Ved samtidige ændringer fra flere enheder bevares begge versioner efter brugerens valg. Google-provider og tilladte adresser skal sættes op før login virker; se [opsætningen](docs/google-login.md). AI-modellen downloades fortsat på hver enhed.

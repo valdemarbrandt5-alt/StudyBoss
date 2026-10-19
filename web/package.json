@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mlc-ai/web-llm": "0.2.86",
+    "@supabase/supabase-js": "2.118.0",
     "katex": "0.19.0",
     "pdfjs-dist": "6.4.299"
   },
