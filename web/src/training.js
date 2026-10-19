@@ -30,7 +30,7 @@ export function masteryForSkill(attempts, skillId) {
   // Re-grading the same exercise replaces its result; it cannot inflate mastery.
   const unique = new Map();
   for (const attempt of attempts || []) {
-    if (attempt.skillId === skillId && attempt.exerciseId && [-3, 0, 2, 4, 7, 10, 12].includes(attempt.score)) unique.set(attempt.exerciseId, attempt);
+    if (!attempt.invalidatedReason && attempt.skillId === skillId && attempt.exerciseId && [-3, 0, 2, 4, 7, 10, 12].includes(attempt.score)) unique.set(attempt.exerciseId, attempt);
   }
   const recent = [...unique.values()].sort((a, b) => a.created.localeCompare(b.created)).slice(-3);
   const passed = recent.filter(attempt => attempt.score >= 7).length;
@@ -58,17 +58,34 @@ export function recordMedalAnswer(run, exerciseId, correct) {
   return true;
 }
 const ADMIN = /eksamen|exam\b|examination|assessment criteria|linux|windows|installation|course schedule|kursusplan|mundtlig|oral presentation/iu;
+// A topic heading is not evidence. Only explanatory statements or worked formulas qualify.
+export function substantivePassages(text) {
+  const sentences = String(text).split(/\n+|(?<=[.!?])\s+/u);
+  const verb = /\b(is|are|uses?|computes?|contains?|consists?|updates?|applies|measures?|reduces?|maps?|represents?|produces?|calculates?|multiplies?|learns?|transforms?|connects?|propagates?|minimizes?|adjusts?|gives?|requires?)\b|\b(er|består|bruger|beregner|indeholder|opdaterer|anvender|måler|reducerer|beskriver|giver|repræsenterer|multiplicerer|minimerer|ændrer|forbinder|lærer)\b/iu;
+  const logistics = /workshop|mini.project|recap|course overview|course content|learning objectives|learning outcomes|pensumoversigt|indholdsfortegnelse|kursusgang|ugeplan|semesterplan|schedule|syllabus|\(AI\)|\(MAT\)/iu;
+  return sentences.map(part => part.trim()).filter(part => {
+    const words = part.match(/[\p{L}\p{N}]+/gu) || [];
+    return !ADMIN.test(part) && !logistics.test(part) && words.length >= 6 && part.length >= 35 && (verb.test(part) || (/[=∇∂]/u.test(part) && words.length >= 9));
+  });
+}
 export function topicDocuments(documents, skill) {
   const pattern = CONCEPTS.find(([id]) => skill?.id === `concept-${id}`)?.[2];
   const words = skill?.title.toLocaleLowerCase('da').match(/[\p{L}]{4,}/gu) || [];
   return documents.flatMap(doc => {
-    const parts = doc.text.split(/\n+|(?<=[.!?])\s+/u).filter(line => line.trim() && !ADMIN.test(line));
-    const hits = parts.map((line, i) => (pattern ? pattern.test(line) : words.some(word => line.toLocaleLowerCase('da').includes(word))) ? i : -1).filter(i => i >= 0);
-    const selected = new Set();
-    for (const i of hits) for (let j = Math.max(0, i - 1); j <= Math.min(parts.length - 1, i + 2); j++) selected.add(j);
-    const text = (!pattern && !selected.size ? parts : [...selected].sort((a,b) => a-b).map(i => parts[i])).join('\n');
-    return text.trim() ? [{ name: doc.name, text }] : [];
+    const parts = substantivePassages(doc.text);
+    const hits = parts.map((line, i) => (pattern ? pattern.test(line) : !words.length || words.some(word => line.toLocaleLowerCase('da').includes(word))) ? i : -1).filter(i => i >= 0);
+    const selected = new Set(); for (const i of hits) for (let j = Math.max(0, i - 1); j <= Math.min(parts.length - 1, i + 1); j++) selected.add(j);
+    const text = (!pattern && !hits.length ? parts : [...selected].sort((a,b) => a-b).map(i => parts[i])).join('\n');
+    return text ? [{ name: doc.name, text }] : [];
   });
+}
+export function exerciseEvidence(question, documents, skill) {
+  const quoted = question.match(/Tekstuddrag:\s*»([\s\S]*?)«/u)?.[1];
+  if (quoted) {
+    const normalize = text => text.replace(/\s+/gu, ' ').trim();
+    if (!topicDocuments([{ name: 'excerpt', text: quoted }], skill).length || !documents.some(doc => normalize(doc.text).includes(normalize(quoted)))) return false;
+  }
+  return topicDocuments(documents, skill).length > 0;
 }
 export function validExercise(text, skill, previous = []) {
   if (!text || text.length > 700 || ADMIN.test(text) || !/^(forklar|beregn|beskriv|hvordan|hvad|hvorfor|sammenlign|vis|udled)\b/iu.test(text.trim()) || /kan ikke|ingen fagligt|som AI|kildeuddraget mangler/iu.test(text)) return false;
@@ -79,29 +96,29 @@ export function validExercise(text, skill, previous = []) {
 }
 
 export function fallbackExercise(documents, skill, previous = []) {
-  const frames = [
-    `Forklar med dine egne ord, hvad ${skill.title} betyder i tekstuddraget.`,
-    `Beskriv et enkelt fagligt eksempel på ${skill.title}, og forbind det med tekstuddraget.`,
-    `Forklar det centrale udsagn i tekstuddraget om ${skill.title}, trin for trin.`,
-    `Beskriv to vigtige pointer om ${skill.title} fra tekstuddraget, og forklar deres sammenhæng.`,
-    `Hvordan ville du forklare ${skill.title} i tekstuddraget til en klassekammerat? Brug et konkret eksempel.`,
-    `Hvad fortæller tekstuddraget om ${skill.title}? Forklar de vigtigste fagudtryk.`,
-    `Forklar hvorfor udsagnet om ${skill.title} i tekstuddraget giver faglig mening.`,
-    `Beskriv ${skill.title} med både en kort forklaring og et eksempel, der passer til tekstuddraget.`,
-    `Hvordan hænger begreberne i tekstuddraget sammen med ${skill.title}? Begrund dit svar.`,
-    `Forklar ${skill.title} ud fra tekstuddraget, og vis hvordan forklaringen kan anvendes.`,
-    `Hvad skal man forstå for at kunne forklare ${skill.title} i tekstuddraget? Gennemgå din forklaring.`,
-    `Beskriv hovedideen i tekstuddraget om ${skill.title}, og begrund den med et fagligt eksempel.`,
-  ];
-  for (const doc of documents) {
-    for (let offset = 0; offset < doc.text.length; offset += 200) {
-    const excerpt = doc.text.trim().slice(offset, offset + 230);
-    if (excerpt.length < 35) continue;
-    for (const frame of frames) {
-      const text = `${frame}\n\nTekstuddrag: »${excerpt}«`;
+  for (const doc of topicDocuments(documents, skill)) {
+    for (const statement of substantivePassages(doc.text)) {
+      // No chopped excerpts or artificial rewording of the same task for medal points.
+      if (statement.length > 450) continue;
+      const text = `Forklar dette konkrete udsagn om ${skill.title} med dine egne ord. Hvad betyder de centrale fagudtryk?\n\nTekstuddrag: »${statement}«`;
       if (validExercise(text, skill, previous)) return { text, sources: [doc.name] };
-    }
     }
   }
   return null;
+}
+
+export function invalidateCatalogueAttempts(course) {
+  for (const attempt of course.attempts || []) {
+    const quoted = attempt.question?.match(/Tekstuddrag:\s*»([\s\S]*?)«/u)?.[1];
+    if (quoted && !substantivePassages(quoted).length) attempt.invalidatedReason = 'Opgaven byggede ikke på en faglig forklaring. Bedømmelsen er ugyldig og tæller ikke med.';
+  }
+  for (const run of Object.values(course.medalRuns || {})) {
+    if (!run.seen?.length) continue;
+    const records = run.seen.map(id => (course.attempts || []).find(attempt => attempt.exerciseId === id));
+    if (records.some(record => !record) || !records.some(record => record.invalidatedReason)) continue;
+    let streak = 0;
+    for (const record of records) if (!record.invalidatedReason) streak = record.correct ? streak + 1 : 0;
+    run.streak = Math.min(streak, run.target); run.completed = run.streak >= run.target;
+    run.seen = records.filter(record => !record.invalidatedReason).map(record => record.exerciseId);
+  }
 }
