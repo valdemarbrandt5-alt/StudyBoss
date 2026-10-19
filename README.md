@@ -1,5 +1,11 @@
 # StudyBoss
 
+## Ny: delbar browserudgave med brugerens egen GPU
+
+`web/` indeholder en separat webversion, hvor AI kører direkte i brugerens browser via WebGPU. Ingen betalt AI-tjeneste eller Ollama-installation er nødvendig for webversionen. Første modeldownload kræver internet og en egnet computer. Samtaler og materiale bliver i den åbne fane. Kvaliteten af de små modeller skal afprøves på det konkrete fag.
+
+Se [web/README.md](web/README.md) for lokal start, begrænsninger og Vercel-opsætning. Projektets `vercel.json` er klar til at bygge denne webudgave. Python-appen nedenfor er fortsat en separat lokal mulighed.
+
 Lokal studiepartner med Qwen3 14B på Ollama. Ingen OpenAI nøgle kræves. Tiltænkt Windows, RTX 5080 med 16 GB VRAM og 32 GB RAM.
 
 ## Første installation

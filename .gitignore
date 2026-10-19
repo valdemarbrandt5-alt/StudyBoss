@@ -7,3 +7,5 @@ backups/
 .env.*
 *.db
 *.pdf
+web/node_modules/
+web/dist/
