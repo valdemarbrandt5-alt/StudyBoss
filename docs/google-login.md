@@ -1,4 +1,6 @@
-# Google-login til StudyBoss
+# Tidligere opsætning: Google-login til StudyBoss
+
+Appen bruger nu mail og adgangskode. Se [den aktuelle opsætning](email-login.md). Trinnene nedenfor er kun til en eventuel senere genindførelse af Google-login.
 
 Appen bruger det eksisterende Supabase-projekt StudyBoss, reference
 `ytmosjreydqayjrkcfwy`. Google skal aktiveres, før login virker.

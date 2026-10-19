@@ -28,12 +28,13 @@ test('identical courses are not duplicated; new local courses are included', () 
 test('profile identity, offline cache and conflict resolution stay isolated across accounts', async () => {
   const elements = new Map(), metadata = new Map(), caches = new Map([['current', workspace('Guest')]]);
   globalThis.document = { getElementById: id => {
-    if (!elements.has(id)) elements.set(id, { hidden: false, disabled: false, textContent: '', showModal() {}, close() {} });
+    if (!elements.has(id)) elements.set(id, { hidden: false, disabled: false, value: '', textContent: '', showModal() {}, close() {}, addEventListener() {} });
     return elements.get(id);
   } };
   globalThis.localStorage = { getItem: key => metadata.get(key) ?? null, setItem: (key, value) => metadata.set(key, value) };
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  let callback, currentUser, blocked = false, conflict = false, owner = 'current';
+  let callback, currentUser, blocked = false, conflict = false, owner = 'current', autoconfirm = false, authError = null;
+  const authCalls = [];
   const rpcCalls = [], cloud = new Map([
     ['A', { workspace: workspace('Account A'), revision: 4 }],
     ['B', { workspace: workspace('Account B'), revision: 7 }]
@@ -41,6 +42,8 @@ test('profile identity, offline cache and conflict resolution stay isolated acro
   const client = {
     auth: {
       onAuthStateChange(fn) { callback = fn; return { data: { subscription: { unsubscribe() {} } } }; },
+      async signUp(credentials) { authCalls.push({ method: 'signup', ...credentials }); return { data: { session: {} } }; },
+      async signInWithPassword(credentials) { authCalls.push({ method: 'login', ...credentials }); return authError ? { error: authError } : { data: { session: {} } }; },
       async getUser() { return { data: { user: { id: currentUser } } }; },
       async signOut() { currentUser = null; callback('SIGNED_OUT', null); return {}; }
     },
@@ -60,13 +63,37 @@ test('profile identity, offline cache and conflict resolution stay isolated acro
   const profile = initializeProfile({
     idle: () => true, flush: async () => {}, lock() {},
     async replace(value, nextOwner) { caches.set(nextOwner, structuredClone(value)); owner = nextOwner; }
-  }, { client, readWorkspace: async (key = 'current') => structuredClone(caches.get(key) || null) });
+  }, {
+    client, readWorkspace: async (key = 'current') => structuredClone(caches.get(key) || null),
+    fetch: async () => ({ ok: true, json: async () => ({ external: { email: true }, mailer_autoconfirm: autoconfirm, disable_signup: false }) })
+  });
   const wait = async predicate => {
     for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
     assert.fail('Profile transition did not finish');
   };
   const login = async id => { currentUser = id; callback('SIGNED_IN', { user: { id, email: id + '@example.com' } }); await wait(() => owner === 'profile:' + id && !profile.pending()); };
   try {
+    const submit = async signup => elements.get('profile-auth-form').onsubmit({ preventDefault() {}, submitter: { id: signup ? 'profile-signup' : 'profile-login' } });
+    const emailInput = document.getElementById('profile-email'), passwordInput = document.getElementById('profile-password');
+    emailInput.value = ' test@example.com '; passwordInput.value = 'secret password';
+    await submit(true);
+    assert.equal(authCalls.length, 0, 'Signup must not send mail while confirmation is enabled');
+    assert.match(elements.get('profile-status').textContent, /Confirm email/);
+    autoconfirm = true; passwordInput.value = 'short';
+    await submit(true);
+    assert.equal(authCalls.length, 0, 'Weak new passwords are rejected before any account is created');
+    passwordInput.value = '  secret password  ';
+    await submit(true);
+    assert.deepEqual(authCalls.at(-1), { method: 'signup', email: 'test@example.com', password: '  secret password  ' });
+    assert.equal(passwordInput.value, '', 'Successful login removes the password from the form');
+    passwordInput.value = 'bad password'; authError = { code: 'invalid_credentials' };
+    await submit(false);
+    assert.match(elements.get('profile-status').textContent, /Mail eller adgangskode er forkert/);
+    assert.equal(elements.get('profile-login').disabled, false);
+    authError = null;
+    await submit(false);
+    assert.equal(authCalls.at(-1).method, 'login');
+    assert.equal(passwordInput.value, '');
     await login('A');
     assert.equal(caches.get('profile:A').courses[0].name, 'Account A');
     assert.equal(caches.get('current').courses[0].name, 'Guest');

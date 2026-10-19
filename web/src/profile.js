@@ -91,25 +91,52 @@ export function initializeProfile(app, services = {}) {
       await app.replace(workspace, owner());
       $('open-profile').textContent = user ? 'Min profil' : 'Log ind';
       $('profile-account').textContent = user?.email || '';
-      $('profile-login').hidden = !!user;
+      $('profile-auth-form').hidden = !!user;
       $('profile-online').hidden = !user;
     } catch (error) { user = previousUser; status('Profilen kunne ikke åbnes. Genindlæs siden for at prøve igen.'); }
     finally { switching = false; app.lock(false); $('profile-login').disabled = false; }
     if (user) await sync();
   }
   $('open-profile').onclick = () => $('profile-dialog').showModal();
-  $('close-profile').onclick = () => $('profile-dialog').close();
-  $('profile-login').onclick = async () => {
+  $('close-profile').onclick = () => { $('profile-password').value = ''; $('profile-dialog').close(); };
+  $('profile-dialog').addEventListener('close', () => { $('profile-password').value = ''; });
+  let authenticating = false;
+  $('profile-auth-form').onsubmit = async event => {
+    event.preventDefault();
+    if (authenticating || switching || user) return;
     if (!app.idle()) { status('Vent til den aktuelle opgave er færdig, før du logger ind.'); return; }
-    await app.flush();
-    $('profile-login').disabled = true;
+    const signup = event.submitter?.id === 'profile-signup';
+    const email = $('profile-email').value.trim(), password = $('profile-password').value;
+    if (!email || !password) { status('Skriv din mail og adgangskode.'); return; }
+    if (signup && password.length < 8) { status('Vælg en adgangskode på mindst 8 tegn.'); return; }
+    authenticating = true; $('profile-login').disabled = true; $('profile-signup').disabled = true;
     try {
-      const response = await fetch(SUPABASE_URL + '/auth/v1/settings', { headers: { apikey: SUPABASE_KEY } });
-      const settings = await response.json();
-      if (!response.ok || !settings.external?.google) throw new Error('Google-login mangler at blive aktiveret. Du kan stadig bruge StudyBoss uden login.');
-      const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/' } });
+      await app.flush();
+      if (signup) {
+        const response = await (services.fetch || fetch)(SUPABASE_URL + '/auth/v1/settings', { headers: { apikey: SUPABASE_KEY } });
+        if (!response.ok) throw new Error('AUTH_SETTINGS_UNAVAILABLE');
+        const settings = await response.json();
+        if (!settings.external?.email || !settings.mailer_autoconfirm || settings.disable_signup) {
+          status('Oprettelse er ikke klar endnu. Projektets ejer skal aktivere mail-login og slå Confirm email fra i Supabase. Ingen bekræftelsesmail er sendt.'); return;
+        }
+      }
+      status(signup ? 'Opretter din profil …' : 'Logger ind …');
+      const { data, error } = signup ? await client.auth.signUp({ email, password }) : await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
-    } catch (error) { status(error.message); $('profile-login').disabled = false; }
+      $('profile-password').value = '';
+      status(data.session ? 'Åbner din profil …' : 'Profilen kræver mailbekræftelse. Projektets ejer skal gøre mail-login færdigt i Supabase.');
+    } catch (error) {
+      const messages = {
+        invalid_credentials: 'Mail eller adgangskode er forkert. Har du ingen profil endnu, så vælg Opret profil.',
+        email_not_confirmed: 'Mailadressen er ikke bekræftet. Kontakt projektets ejer for at få mail-login gjort klar.',
+        user_already_exists: 'Der findes allerede en profil med den mail. Vælg Log ind.',
+        weak_password: 'Vælg en længere og stærkere adgangskode.',
+        signup_disabled: 'Oprettelse af nye profiler er ikke aktiveret endnu.',
+        over_request_rate_limit: 'For mange forsøg. Vent lidt, og prøv igen.',
+        over_email_send_rate_limit: 'Mail-login mangler den sidste indstilling i Supabase. Kontakt projektets ejer.'
+      };
+      status(messages[error.code] || 'Kunne ikke logge ind eller oprette profilen. Tjek forbindelsen, og prøv igen.');
+    } finally { authenticating = false; $('profile-login').disabled = switching; $('profile-signup').disabled = switching; }
   };
   $('profile-logout').onclick = async () => {
     if (!app.idle() || working || switching) { status('Vent til gemning eller den aktuelle opgave er færdig.'); return; }

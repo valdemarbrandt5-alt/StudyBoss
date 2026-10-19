@@ -74,6 +74,6 @@ Forkerte svar gemmes i en separat Øv fejl-samling, som ikke beskæres med histo
 Fortsættende varianter i de 12 faste emner laves med faglige skabeloner, nye tal og selvstændige situationer. Referencefacit beregnes efter de samme regler. Der er ingen fast antalgrænse; samme begreber kan genbesøges i nye varianter. Det undgår at gøre fortsættelsen afhængig af stabil fri AI-generering. Nye emner uden skabelon har fortsat AI-genererede opgaver og vejledende facit.
 
 
-### Valgfri profil med Google-login
+### Valgfri profil med mail og adgangskode
 
-Webversionen understøtter private Supabase-profiler med Google-login. Fag, udtrukket materialetekst, noter, samtaler og træningsdata gemmes lokalt først og synkroniseres online. Ved samtidige ændringer fra flere enheder bevares begge versioner efter brugerens valg. Google-provider og tilladte adresser skal sættes op før login virker; se [opsætningen](docs/google-login.md). AI-modellen downloades fortsat på hver enhed.
+Webversionen understøtter private Supabase-profiler med mail og adgangskode. Fag, udtrukket materialetekst, noter, samtaler og træningsdata gemmes lokalt først og synkroniseres online. Ved samtidige ændringer fra flere enheder bevares begge versioner efter brugerens valg. Mail-login skal være aktiveret med Confirm email slået fra i denne prøveversion; se [opsætningen](docs/email-login.md). Glemt adgangskode er ikke tilgængelig uden en mailtjeneste. AI-modellen downloades fortsat på hver enhed.
