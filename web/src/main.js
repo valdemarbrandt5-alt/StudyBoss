@@ -16,9 +16,9 @@ const controls = () => {
   $('send').textContent = state.busy ? 'Stop svar ■' : 'Send spørgsmål ↑';
   for (const id of ['new-exercise', 'grade']) $(id).disabled = !state.engine || state.busy || state.importing;
   $('use-own-exercise').disabled = state.busy || state.loading || state.importing || state.initializing;
-  for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'course-switch', 'add-course', 'course-name']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
+  for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'add-course', 'course-name']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   $('model').disabled ||= !!state.engine;
-  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open')) button.disabled = state.busy || state.loading || state.importing || state.initializing;
+  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open, .course-tab')) button.disabled = state.busy || state.loading || state.importing || state.initializing;
   $('load-model').disabled = !state.supported || !$('download-consent').checked || state.loading || state.busy || state.importing || !!state.engine;
   $('download-consent').disabled = state.loading || !!state.engine;
   $('unload').hidden = !state.engine;
@@ -80,9 +80,19 @@ function renderAssessment(assessment) {
 function viewMaterial(doc) { $('material-title').textContent = doc.name; $('material-text').textContent = doc.text; $('material-viewer').showModal(); }
 $('close-material').addEventListener('click', () => $('material-viewer').close());
 function renderCourses() {
-  $('course-switch').replaceChildren(); $('course-grid').replaceChildren();
+  $('course-tabs').replaceChildren(); $('course-grid').replaceChildren();
   for (const course of state.workspace.courses) {
-    const option = document.createElement('option'); option.value = course.id; option.textContent = course.name; $('course-switch').append(option);
+    const selected = course.id === state.workspace.activeId;
+    const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'course-tab'; tab.id = `course-tab-${course.id}`;
+    tab.textContent = course.name; tab.title = course.name; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(selected)); tab.setAttribute('aria-controls', 'course-panel'); tab.tabIndex = selected ? 0 : -1;
+    tab.addEventListener('click', () => switchCourse(course.id));
+    tab.addEventListener('keydown', event => {
+      const courses = state.workspace.courses, current = courses.findIndex(item => item.id === course.id);
+      const next = event.key === 'ArrowRight' ? (current + 1) % courses.length : event.key === 'ArrowLeft' ? (current - 1 + courses.length) % courses.length : event.key === 'Home' ? 0 : event.key === 'End' ? courses.length - 1 : null;
+      if (next === null) return;
+      event.preventDefault(); switchCourse(courses[next].id); document.getElementById(`course-tab-${courses[next].id}`)?.focus();
+    });
+    $('course-tabs').append(tab);
     const card = document.createElement('article'); card.className = `card course-card${course.id === state.workspace.activeId ? ' selected' : ''}`;
     const title = document.createElement('h2'); title.textContent = course.name;
     const count = document.createElement('p'); count.textContent = `${course.documents.length} materialefil${course.documents.length === 1 ? '' : 'er'} · ${course.attempts.length} bedømmelse${course.attempts.length === 1 ? '' : 'r'}`;
@@ -90,7 +100,7 @@ function renderCourses() {
     const open = document.createElement('button'); open.type = 'button'; open.className = 'secondary course-open'; open.textContent = course.id === state.workspace.activeId ? 'Valgt fag ✓' : 'Vælg fag ↗'; open.addEventListener('click', () => switchCourse(course.id));
     card.append(title, count, topic, open); $('course-grid').append(card);
   }
-  $('course-switch').value = state.workspace.activeId || '';
+  if (state.workspace.activeId) $('course-panel').setAttribute('aria-labelledby', `course-tab-${state.workspace.activeId}`);
   $('course-materials').replaceChildren();
   const course = activeCourse(); if (!course) return;
   $('course-material-heading').textContent = `${course.name} · ${fileCount(course.documents.length)}`;
@@ -119,9 +129,10 @@ function restoreCourse() {
 }
 function switchCourse(id) {
   if (state.busy || state.loading || state.importing || !state.workspace.courses.some(course => course.id === id)) return;
+  const focusTab = document.activeElement?.getAttribute('role') === 'tab';
   persist(); state.workspace.activeId = id; restoreCourse(); persist(); notice(`Valgt fag: ${activeCourse().name}`);
+  if (focusTab) document.getElementById(`course-tab-${id}`)?.focus();
 }
-$('course-switch').addEventListener('change', event => switchCourse(event.target.value));
 $('course-form').addEventListener('submit', event => {
   event.preventDefault(); if (state.busy || state.loading || state.importing || state.initializing) return;
   const name = $('course-name').value.trim(); if (!name) return;
