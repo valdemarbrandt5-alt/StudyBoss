@@ -10,7 +10,7 @@ export function unusedSeed(course, skillId) {
   return CONCEPT_QUESTIONS[skillId]?.find(item => !seen.has(questionKey(skillId,item.question))) || null;
 }
 export function questionReference(course, skillId, question) {
-  return findConceptQuestion(skillId,question) || (course.questionHistory[skillId] || []).find(item => item.question === question) || Object.values(course.mistakes).find(item => item.skillId === skillId && item.question === question && item.reference)?.reference || null;
+  return (course.questionHistory[skillId] || []).find(item => item.question === question) || findConceptQuestion(skillId,question) || Object.values(course.mistakes).find(item => item.skillId === skillId && item.question === question && item.reference)?.reference || null;
 }
 export function parseNewQuestion(text, course, skillId) {
   let item; try { item=JSON.parse(text); } catch { throw new Error('AI’en gav ikke en færdig opgave. Prøv igen.'); }
@@ -21,7 +21,7 @@ export function parseNewQuestion(text, course, skillId) {
   return {question:item.question.trim(),answer:item.answer.trim()};
 }
 export function saveMistake(course, assessment, reference = null) {
-  if (assessment.invalidatedReason || typeof assessment.question !== 'string') return;
+  if (assessment.drawingReview || assessment.invalidatedReason || typeof assessment.question !== 'string') return;
   const key=questionKey(assessment.skillId || '',assessment.question);
   const wrong=assessment.correct === false || (assessment.correct === undefined && assessment.score < 7);
   if (wrong) {

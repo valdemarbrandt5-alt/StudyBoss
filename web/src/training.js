@@ -36,12 +36,12 @@ export function masteryForSkill(attempts, skillId) {
   // Re-grading the same exercise replaces its result; it cannot inflate mastery.
   const unique = new Map();
   for (const attempt of attempts || []) {
-    if (!attempt.invalidatedReason && attempt.skillId === skillId && attempt.exerciseId && [-3, 0, 2, 4, 7, 10, 12].includes(attempt.score)) unique.set(attempt.exerciseId, attempt);
+    if (!attempt.invalidatedReason && attempt.skillId === skillId && attempt.exerciseId && (typeof attempt.correct === 'boolean' || [-3, 0, 2, 4, 7, 10, 12].includes(attempt.score))) unique.set(attempt.exerciseId, attempt);
   }
   const recent = [...unique.values()].sort((a, b) => a.created.localeCompare(b.created)).slice(-3);
-  const passed = recent.filter(attempt => attempt.score >= 7).length;
+  const passed = recent.filter(attempt => typeof attempt.correct === 'boolean' ? attempt.correct : attempt.score >= 7).length;
   const mastered = recent.length === 3 && passed === 3;
-  const needsPractice = recent.length > 0 && recent.at(-1).score < 7;
+  const needsPractice = recent.length > 0 && (typeof recent.at(-1).correct === 'boolean' ? !recent.at(-1).correct : recent.at(-1).score < 7);
   const status = !recent.length ? 'new' : mastered ? 'mastered' : needsPractice ? 'review' : 'learning';
   return { status, label: { new: 'Ikke startet', mastered: 'Foreløbigt mestret', review: 'Øv mere', learning: 'Undervejs' }[status], passed, recent, total: unique.size };
 }

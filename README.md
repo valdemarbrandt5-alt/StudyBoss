@@ -89,3 +89,12 @@ Der er ikke længere et fast maksimum på antal materialefiler, PDF-sider eller 
 ### Automatisk opstart af lokal AI
 
 Efter en vellykket manuel modelstart huskes modelvalg og downloadsamtykke på enheden. Start AI automatisk er slået til som udgangspunkt og kan ændres i AI-indstillingerne. Ved næste besøg afventes fagoversigt og GPU-kontrol, og WebLLMs cachekontrol skal finde den gemte model, før automatisk indlæsning forsøges. En ny browser/enhed uden vellykket opsætning starter ikke automatisk. AI indlæses stadig i GPU-hukommelsen ved hvert besøg; modellen holdes ikke kørende efter fanen lukkes. Frigiv grafikhukommelse og Annuller indlæsning slår automatisk opstart fra. Tilbagetrækning af downloadsamtykke forhindrer næste automatiske opstart. Fejl giver en manuel mulighed uden gentagne genstartsforsøg.
+
+
+### Niveauer og tegneopgaver
+
+Hver opgavetype tilbyder Let (korte begrebsspørgsmål), Mellem (fire svarmuligheder med ét korrekt svar), Svær (anvendelse, beregning og begrundelse) og Tegn. Der kan også skiftes fra opgavevisningen. De 12 faste emner har fortsættende mellem-, svære- og tegnevarianter med tilhørende facit eller tjekliste. Egne emner bruger lokal AI til lette, mellem og svære spørgsmål; multiple choice valideres for fire forskellige muligheder og et gyldigt facitindeks. AI-genererede facit er stadig vejledende.
+
+Multiple choice kontrolleres direkte mod det gemte facit og kræver ingen AI til selve bedømmelsen. Der gives rigtigt/forkert, ikke en opdigtet 7-trinskarakter. Forkerte valg bevarer opgave, valgmuligheder, korrekt indeks og oprindeligt elevsvar i Øv fejl. At genbedømme den samme opgave kan ikke give flere medaljepoint. Kladder, fremgang, udfordringer og optjente medaljer er adskilt pr. niveau. Gamle kladder og medaljer beholder deres oprindelige nøgler og tilhører Let.
+
+Tegneopgaver løses med mus, pen eller finger på et lærred. Stregdata gemmes med kladden og kan fortrydes eller ryddes. Efter afsløring vises den bevarede skitse sammen med en vejledende, ikke målfast modelskitse og en tjekliste. Den lokale tekstmodel vurderer ikke billedet. Der gives derfor ingen AI-karakter, rigtigt/forkert, mestring eller medaljepoint for egenkontrol af tegninger. Skitse og reference bevares i historikken; tegneopgaver bliver ikke registreret som forkerte besvarelser ved genindlæsning.

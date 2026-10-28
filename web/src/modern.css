@@ -240,4 +240,23 @@ progress { accent-color: var(--accent); }
 .reading-page-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; max-height: 220px; overflow-y: auto; }
 .reading-page-links button { font-size: 11px; }
 .reading-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.level-options { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.level-options button { padding:7px 12px; font-size:12px; }
+.level-options button[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+.workout-level { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+.workout-level label { margin:0; white-space:nowrap; }
+.workout-level select { max-width:320px; }
+#choice-options { border:0; margin:16px 0; padding:0; }
+#choice-options legend { font-size:13px; font-weight:650; margin-bottom:12px; }
+.choice-option { display:flex; align-items:flex-start; gap:12px; padding:16px; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; cursor:pointer; margin:10px 0; }
+.choice-option:has(input:checked) { border-color:var(--accent); background:var(--accent-soft); }
+.choice-option input { width:18px; height:18px; flex-shrink:0; margin-top:2px; accent-color:var(--accent); }
+.choice-option span { line-height:1.6; font-size:14px; }
+#drawing-canvas,.drawing-comparison canvas { display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); touch-action:none; }
+.drawing-tools { display:flex; gap:8px; margin:12px 0 20px; }
+.drawing-comparison { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:20px; }
+.drawing-comparison h3 { font-size:14px; }
+.model-sketch { border:1px solid var(--line); border-radius:12px; padding:12px; background:var(--surface-2); }
+.model-sketch svg { width:100%; height:auto; color:var(--text); display:block; }
+@media(max-width:700px) { .drawing-comparison { grid-template-columns:1fr; } .workout-level { align-items:flex-start; flex-direction:column; } }
 @media (max-width: 700px) { .reading-columns { grid-template-columns: 1fr; gap: 12px; } .reading-heading { align-items: flex-start; flex-direction: column; } .reading-topic > summary { padding: 18px; } .reading-topic-body { padding: 0 18px 18px; } .reading-actions { flex-wrap: wrap; } }
