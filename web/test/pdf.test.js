@@ -23,3 +23,23 @@ test('material-based exercises always receive actual text despite no keyword ove
   assert.deepEqual(result.sources, ['lecture.pdf']); assert.match(result.messages.at(-1).content, /Photosynthesis/);
   assert.throws(() => buildMessages({ query: 'Lav et spørgsmål', documents: [], requireMaterial: true }), /undervisningsmateriale/);
 });
+test('default PDF import reads beyond 60 pages and 150000 characters, reports progress and cleans each page', async () => {
+  const read = [], cleaned = [], progress = [];
+  let destroyed = false;
+  const task = {
+    promise: Promise.resolve({ numPages: 103, async getPage(number) {
+      read.push(number);
+      return { getTextContent: async () => ({ items: [{ str: 'Faglig tekst '.repeat(200) + ' Slut-' + number }] }), cleanup() { cleaned.push(number); } };
+    } }),
+    async destroy() { destroyed = true; }
+  };
+  const result = await extractPDF(task, undefined, undefined, (page, total) => progress.push([page, total]));
+  assert.equal(read.length, 103);
+  assert.deepEqual(cleaned, read);
+  assert.ok(result.text.length > 150000);
+  assert.match(result.text, /Side 103/);
+  assert.match(result.text, /Slut-103$/);
+  assert.equal(result.truncated, false);
+  assert.deepEqual(progress.at(-1), [103, 103]);
+  assert.equal(destroyed, true);
+});

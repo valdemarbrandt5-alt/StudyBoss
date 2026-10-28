@@ -6,7 +6,7 @@ export const WEB_READING = {
   'concept-networks': [neural],
   'concept-gradient': [resource('Gradient descent forklaret', 'Google', google + 'linear-regression/gradient-descent')],
   'concept-backprop': [resource('Forward pass, backpropagation og beregningsgrafer', 'Dive into Deep Learning', 'https://d2l.ai/chapter_multilayer-perceptrons/backprop.html'), neural],
-  'concept-cnn': [resource('Convolution på billeder', 'Dive into Deep Learning', 'https://d2l.ai/chapter_convolutional-neural-networks/conv-layer.html')],
+  'concept-cnn': [resource('Convolution på billeder', 'Dive into Deep Learning', 'https://d2l.ai/chapter_convolutional-neural-networks/conv-layer.html'), resource('Padding, stride og outputstørrelse', 'Dive into Deep Learning', 'https://d2l.ai/chapter_convolutional-neural-networks/padding-and-strides.html')],
   'concept-activations': [resource('ReLU, sigmoid og aktiveringsfunktioner', 'Google', google + 'neural-networks/activation-functions')],
   'concept-loss': [resource('Tabsfunktioner og MSE', 'Google', google + 'linear-regression/loss')],
   'concept-regularization': [resource('Overfitting og generalisering', 'Google', google + 'overfitting/overfitting')],

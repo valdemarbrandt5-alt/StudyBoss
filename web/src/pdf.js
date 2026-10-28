@@ -1,5 +1,5 @@
 // PDF.js 6 releases a document through its loading task, not PDFDocumentProxy.
-export async function extractPDF(loadingTask, maxPages = 60, maxChars = 150000) {
+export async function extractPDF(loadingTask, maxPages = Infinity, maxChars = Infinity, onProgress = () => {}) {
   try {
     const pdf = await loadingTask.promise;
     const pages = []; let length = 0;
@@ -9,6 +9,7 @@ export async function extractPDF(loadingTask, maxPages = 60, maxChars = 150000) 
       const text = content.items.map(item => item.str || '').join(' ');
       pages.push(text.trim() ? `Side ${i}\n${text}` : ''); length += text.length;
       page.cleanup?.();
+      onProgress(i, pdf.numPages);
       if (length >= maxChars) break;
     }
     const text = pages.join('\n\n').trim();

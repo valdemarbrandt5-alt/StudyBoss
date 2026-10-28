@@ -217,3 +217,27 @@ progress { accent-color: var(--accent); }
 .web-reading a:hover { text-decoration: underline; } .web-reading small { display: block; color: var(--muted); margin-top: 5px; font-size: 11px; }
 .training-toolbar { flex-wrap: wrap; } #random-training { margin-left: auto; }
 #topic-reading summary { cursor: pointer; }
+.reading-overview { margin: 0 0 36px; }
+.reading-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.reading-heading h2 { font-size: 26px; margin: 8px 0; letter-spacing: -.6px; }
+.reading-badge { color: var(--accent); background: var(--accent-soft); border-radius: 24px; padding: 8px 12px; font-size: 11px; }
+#reading-summary { color: var(--muted); font-size: 13px; }
+.reading-topic { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); margin: 12px 0; overflow: hidden; }
+.reading-topic[open] { border-color: var(--accent); }
+.reading-topic > summary { display: flex; align-items: center; gap: 18px; padding: 22px; cursor: pointer; list-style: none; }
+.reading-topic > summary::after { content: '+'; margin-left: auto; font-size: 22px; color: var(--accent); }
+.reading-topic[open] > summary::after { content: '−'; }
+.reading-topic > summary::-webkit-details-marker { display: none; }
+.reading-number { color: var(--accent); font-size: 12px; }
+.reading-topic-title { font-size: 16px; font-weight: 650; }
+.reading-topic-title small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 6px; }
+.reading-topic-body { padding: 0 22px 22px; }
+.reading-guidance { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 16px; font-size: 13px; line-height: 1.7; margin-top: 0; }
+.reading-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.reading-columns h3 { font-size: 12px; margin: 12px 0 16px; }
+.reading-material { padding: 12px 0; border-top: 1px solid var(--line); }
+.reading-material > strong { font-size: 12px; display: block; overflow-wrap: anywhere; }
+.reading-page-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; max-height: 220px; overflow-y: auto; }
+.reading-page-links button { font-size: 11px; }
+.reading-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+@media (max-width: 700px) { .reading-columns { grid-template-columns: 1fr; gap: 12px; } .reading-heading { align-items: flex-start; flex-direction: column; } .reading-topic > summary { padding: 18px; } .reading-topic-body { padding: 0 18px 18px; } .reading-actions { flex-wrap: wrap; } }

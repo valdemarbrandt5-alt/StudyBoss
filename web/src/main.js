@@ -1,5 +1,6 @@
 import { QUESTION_SCHEMA, rememberQuestion, unusedSeed, questionReference, parseNewQuestion, saveMistake, migrateLearning, continuingVariant } from './learning.js';
 import { webReadingFor } from './reading.js';
+import { readingPlan } from './reading-plan.js';
 import { CONCEPT_QUESTIONS, conceptGradingTask, randomTrainingSkill } from './concepts.js';
 import './style.css';
 import './modern.css';
@@ -48,7 +49,7 @@ const controls = () => {
   for (const id of ['skill-filter', 'skill-name', 'add-skill']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   for (const id of ['model', 'subject', 'topic', 'files', 'clear-chat', 'add-course', 'course-name', 'open-course-dialog']) $(id).disabled = state.busy || state.loading || state.importing || state.initializing;
   $('model').disabled ||= !!state.engine;
-  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open, .course-tab, .train-skill')) button.disabled = state.busy || state.loading || state.importing || state.initializing || button.dataset.noMaterial === 'true';
+  for (const button of document.querySelectorAll('#file-list button, [data-prompt], .course-open, .course-tab, .train-skill, .reading-train, .reading-ask')) button.disabled = state.busy || state.loading || state.importing || state.initializing || button.dataset.noMaterial === 'true';
   $('load-model').disabled = !state.supported || !$('download-consent').checked || state.loading || state.busy || state.importing || !!state.engine;
   $('download-consent').disabled = state.loading || !!state.engine;
   $('unload').hidden = !state.engine;
@@ -155,6 +156,56 @@ function viewMaterial(doc, reference = null) {
   $('material-reference-title').textContent = reference?.page ? `Relevant uddrag · side ${reference.page}` : 'Relevant uddrag';
   renderMathText($('material-reference-text'), reference?.text || '');
   $('material-full').open = !reference; $('material-viewer').showModal();
+}
+let readingSnapshot = null;
+function renderReadingOverview() {
+  const course = activeCourse(); if (!course || $('page-chat').hidden) return;
+  const skillsKey = JSON.stringify([course.skills, course.attempts.map(a => [a.skillId, a.skillTitle])]);
+  if (readingSnapshot?.course === course && readingSnapshot.skillsKey === skillsKey && readingSnapshot.documents.length === course.documents.length && readingSnapshot.documents.every((doc, i) => doc.name === course.documents[i].name && doc.text === course.documents[i].text)) return;
+  readingSnapshot = { course, skillsKey, documents: course.documents.map(doc => ({ name: doc.name, text: doc.text })) };
+  const topics = readingPlan(course), list = $('reading-topics'); list.replaceChildren();
+  $('reading-summary').textContent = course.documents.length
+    ? `${topics.length} underemner i ${course.name} · ${fileCount(course.documents.length)} gennemgået for emner og læseafsnit.`
+    : 'Tilføj undervisningsmateriale i sidepanelet, så får du underemner og forslag til, hvor du kan læse op.';
+  if (!topics.length) return;
+  for (const [index, topic] of topics.entries()) {
+    const card = document.createElement('details'); card.className = 'reading-topic'; card.open = index === 0;
+    const summary = document.createElement('summary');
+    const number = document.createElement('span'); number.className = 'reading-number'; number.textContent = String(index + 1).padStart(2, '0');
+    const heading = document.createElement('span'); heading.className = 'reading-topic-title'; heading.textContent = topic.title;
+    const count = document.createElement('small'); count.textContent = `${topic.materials.length} materialefil${topic.materials.length === 1 ? '' : 'er'} · ${topic.resources.length} læselink${topic.resources.length === 1 ? '' : 's'}`;
+    heading.append(count); summary.append(number, heading); card.append(summary);
+    const body = document.createElement('div'); body.className = 'reading-topic-body';
+    const guidance = document.createElement('p'); guidance.className = 'reading-guidance'; guidance.textContent = topic.guidance; body.append(guidance);
+    const columns = document.createElement('div'); columns.className = 'reading-columns';
+    const local = document.createElement('section'); const localHeading = document.createElement('h3'); localHeading.textContent = 'I dit materiale'; local.append(localHeading);
+    if (!topic.materials.length) { const note = document.createElement('p'); note.className = 'hint'; note.textContent = 'Der er ikke fundet et matchende afsnit i de nuværende filer.'; local.append(note); }
+    for (const material of topic.materials) {
+      const group = document.createElement('div'); group.className = 'reading-material';
+      const title = document.createElement('strong'); title.textContent = material.name; group.append(title);
+      if (!material.references.length) {
+        const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = 'Emnet nævnes, men der blev ikke fundet et forklarende afsnit. Brug læselinket eller åbn materialet.'; group.append(hint);
+        const open = document.createElement('button'); open.className = 'text-button'; open.textContent = 'Åbn materialet ↗'; open.onclick = () => viewMaterial(material.doc); group.append(open);
+      }
+      // All matched pages remain available without filling the overview with excerpts.
+      const refs = document.createElement('div'); refs.className = 'reading-page-links';
+      for (const [i, ref] of material.references.entries()) {
+        const open = document.createElement('button'); open.className = 'secondary';
+        open.textContent = ref.page ? `Læs side ${ref.page} ↗` : `Læs afsnit ${i + 1} ↗`;
+        open.onclick = () => viewMaterial(material.doc, ref); refs.append(open);
+      }
+      group.append(refs); local.append(group);
+    }
+    const external = document.createElement('section'); const webHeading = document.createElement('h3'); webHeading.textContent = 'Læs videre på nettet'; external.append(webHeading);
+    renderWebReading(external, topic.id);
+    if (!topic.resources.length) { const note = document.createElement('p'); note.className = 'hint'; note.textContent = 'Der er endnu ikke et udvalgt eksternt læselink til dette underemne. Start med dit materiale.'; external.append(note); }
+    columns.append(local, external); body.append(columns);
+    const actions = document.createElement('div'); actions.className = 'reading-actions';
+    const ask = document.createElement('button'); ask.className = 'secondary reading-ask'; ask.textContent = 'Spørg om emnet';
+    ask.onclick = () => { $('question').value = `Forklar ${topic.title} enkelt med et konkret eksempel.`; $('question').focus(); $('chat-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    const train = document.createElement('button'); train.className = 'primary reading-train'; train.textContent = 'Træn emnet ↗'; train.onclick = () => selectSkill(topic.id);
+    actions.append(ask, train); body.append(actions); card.append(body); list.append(card);
+  }
 }
 $('close-material').addEventListener('click', () => $('material-viewer').close());
 function renderTraining() {
@@ -285,6 +336,7 @@ function renderCourses() {
     else renderReadingLinks(body, attempt); detail.append(summary, body); $('course-attempts').append(detail);
   }
   renderTraining();
+  renderReadingOverview();
   controls();
 }
 function discardIrrelevantExercise() {
@@ -451,6 +503,7 @@ function showPage(name) {
   document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav.dataset.page === (name === 'workout' ? 'practice' : name)));
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (name === 'workout') $('workout-title').focus({ preventScroll: true });
+  if (name === 'chat') { renderReadingOverview(); controls(); }
 }
 document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.page)));
 $('back-to-training').addEventListener('click', () => { persist(); showPage('practice'); });
@@ -485,7 +538,6 @@ $('files').addEventListener('change', async () => {
   const files = [...$('files').files]; const results = []; let added = 0;
   for (const file of files) {
     try {
-      if (state.documents.length >= 6) throw new Error('Der kan højst være 6 filer i denne prøveversion.');
       if (file.size > 50 * 1024 * 1024) throw new Error('Filen er større end 50 MB.');
       if (!/\.(pdf|txt|md)$/i.test(file.name)) throw new Error('Vælg PDF, TXT eller Markdown.');
       $('file-status').textContent = `Læser ${file.name} lokalt …`;
@@ -495,13 +547,13 @@ $('files').addEventListener('change', async () => {
         const { default: workerURL } = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
         pdfjs.GlobalWorkerOptions.workerSrc = workerURL;
         const task = pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false });
-        const extracted = await extractPDF(task);
+        const extracted = await extractPDF(task, Infinity, Infinity, (page, total) => {
+          $('file-status').textContent = `Læser ${file.name} · side ${page} af ${total} …`;
+        });
         text = extracted.text;
-        if (extracted.truncated) results.push(`${file.name}: kun de første højst 60 sider / 150.000 tegn blev læst.`);
       } else { text = await file.text(); }
       if (!text.trim()) throw new Error('Filen er tom.');
-      if (text.length > 150000) results.push(`${file.name}: teksten blev begrænset til 150.000 tegn.`);
-      state.documents.push({ name: file.name, text: text.slice(0, 150000) }); added++;
+      state.documents.push({ name: file.name, text }); added++;
     } catch (error) { results.push(`${file.name}: ${error.message}`); }
   }
   state.importing = false; $('files').value = ''; renderFiles();

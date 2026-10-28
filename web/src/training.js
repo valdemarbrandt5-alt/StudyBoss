@@ -13,6 +13,12 @@ const CONCEPTS = [
   ['photosynthesis', 'Fotosyntese', /photosynthesis|fotosyntese/iu],
   ['fractions', 'Brøker og procent', /\bbrøker?\b|\bfractions?\b|procentregning/iu],
 ];
+export function matchesSkillText(text, skill) {
+  const pattern = CONCEPTS.find(([id]) => skill?.id === `concept-${id}`)?.[2];
+  if (pattern) return pattern.test(text);
+  const words = skill?.title?.toLocaleLowerCase('da').match(/[\p{L}]{4,}/gu) || [];
+  return words.length > 0 && words.some(word => String(text).toLocaleLowerCase('da').includes(word));
+}
 export function skillsForCourse(course) {
   const documents = course.documents || [];
   const skills = CONCEPTS.flatMap(([id, title, pattern]) => {

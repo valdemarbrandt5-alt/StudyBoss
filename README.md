@@ -77,3 +77,10 @@ Fortsættende varianter i de 12 faste emner laves med faglige skabeloner, nye ta
 ### Valgfri profil med mail og adgangskode
 
 Webversionen understøtter private Supabase-profiler med mail og adgangskode. Fag, udtrukket materialetekst, noter, samtaler og træningsdata gemmes lokalt først og synkroniseres online. Ved samtidige ændringer fra flere enheder bevares begge versioner efter brugerens valg. Mail-login skal være aktiveret med Confirm email slået til og en mailtjeneste tilsluttet; se [opsætningen](docs/email-login.md). Glemt adgangskode er ikke tilgængelig uden en mailtjeneste. AI-modellen downloades fortsat på hver enhed.
+
+
+### Læseoversigt under Forstå stoffet
+
+Forstå stoffet viser de samme underemner som træningen. Læseoversigten søger i den importerede tekst efter emner og forklarende afsnit og henviser til faktiske Side-markører i PDF-teksten. Brugeren kan åbne materialet, læse eksterne introduktioner hos udvalgte faglige udgivere, forberede et spørgsmål eller starte fri træning i emnet. Et kursusplansmatch uden en faglig forklaring markeres som en omtale, ikke et læseafsnit. Ukendte emner får ikke opfundne eksterne links. Det er en søgeordsbaseret læsehjælp og ikke en fuldstændig AI-analyse af pensum; scanninger og PDF-billeder læses fortsat ikke.
+
+Der er ikke længere et fast maksimum på antal materialefiler, PDF-sider eller udtrukne teksttegn. PDF-import læser alle sider som standard, frigiver hver side efter læsning og viser sidefremgang. Grænsen på 50 MB pr. fil og browserens faktiske lager/hukommelse gælder stadig. Lokal AI bruger fortsat udvalgte uddrag inden for modellens kontekst, selvom hele dokumentteksten er gemt. Profilsynkronisering har fortsat sin særskilte grænse på 20 MB. Filer, som tidligere er importeret med afkortning, skal fjernes og tilføjes igen for at få den manglende tekst med; originalfilerne ligger ikke i appens lager.
