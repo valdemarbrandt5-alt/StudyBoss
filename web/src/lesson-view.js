@@ -2,7 +2,7 @@ import { lessonFor, lessonProgress, answerLesson } from './lessons.js';
 
 export function createLessonView({ activeCourse, persist, showPage, renderText }) {
   const page = document.createElement('section'); page.id = 'page-lesson'; page.className = 'page'; page.hidden = true;
-  document.getElementById('course-panel').append(page);
+  const panel = document.getElementById('course-panel'); panel.insertBefore(page, panel.querySelector('footer'));
   let selectedId, selectedTitle;
   const element = (tag, text, parent, className = '') => {
     const node = document.createElement(tag); node.className = className;
