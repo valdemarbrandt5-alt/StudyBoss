@@ -1,6 +1,7 @@
 import { QUESTION_SCHEMA, rememberQuestion, unusedSeed, questionReference, parseNewQuestion, saveMistake, migrateLearning, continuingVariant } from './learning.js';
 import { webReadingFor } from './reading.js';
 import { readingPlan } from './reading-plan.js';
+import { readModelPreferences, saveModelPreferences, canAutoStart } from './model-preferences.js';
 import { CONCEPT_QUESTIONS, conceptGradingTask, randomTrainingSkill } from './concepts.js';
 import './style.css';
 import './modern.css';
@@ -16,6 +17,11 @@ import { skillsForCourse, masteryForSkill, recommendSkill, MEDALS, runKey, newMe
 
 const $ = id => document.getElementById(id);
 initializeTheme();
+let modelPreferences;
+try { modelPreferences = readModelPreferences(localStorage); } catch { modelPreferences = readModelPreferences(null); }
+$('model').value = modelPreferences.model;
+$('auto-start-ai').checked = modelPreferences.autoStart;
+$('download-consent').checked = modelPreferences.approved;
 const state = { engine: null, worker: null, loading: false, busy: false, importing: false, supported: false, history: [], documents: [], exercise: '', stop: false, cancelLoad: null, failGeneration: null };
 state.initializing = true;
 state.workspace = { version: 1, courses: [], activeId: null };
@@ -404,10 +410,19 @@ function modelInfo() { const model = MODELS[$('model').value]; $('model-info').t
 $('open-settings').addEventListener('click', () => { $('settings').showModal(); });
 $('close-settings').addEventListener('click', () => $('settings').close());
 $('model').addEventListener('change', modelInfo);
-$('download-consent').addEventListener('change', controls);
-$('unload').addEventListener('click', () => { resetEngine(); $('load-status').textContent = 'AI’en er stoppet. Downloadede modelfiler kan stadig ligge i browserens cache.'; });
-$('cancel-load').addEventListener('click', () => state.cancelLoad?.(new Error('Indlæsningen blev annulleret. Allerede hentede filer kan være gemt i browserens cache.')));
-$('load-model').addEventListener('click', async () => {
+$('download-consent').addEventListener('change', () => {
+  if (!$('download-consent').checked) { modelPreferences.approved = false; rememberModelPreferences(); }
+  controls();
+});
+function rememberModelPreferences() {
+  modelPreferences = { ...modelPreferences, autoStart: $('auto-start-ai').checked };
+  try { saveModelPreferences(localStorage, modelPreferences); } catch {}
+}
+$('auto-start-ai').addEventListener('change', rememberModelPreferences);
+function stopAutoStart() { $('auto-start-ai').checked = false; rememberModelPreferences(); }
+$('unload').addEventListener('click', () => { stopAutoStart(); resetEngine(); $('load-status').textContent = 'AI’en er stoppet. Automatisk opstart er slået fra. Downloadede modelfiler kan stadig ligge i browserens cache.'; });
+$('cancel-load').addEventListener('click', () => { stopAutoStart(); state.cancelLoad?.(new Error('Indlæsningen blev annulleret. Allerede hentede filer kan være gemt i browserens cache.')); });
+async function loadModel(automatic = false) {
   if (state.loading || state.busy || state.engine || !state.supported || !$('download-consent').checked) return;
   state.loading = true; controls(); $('download-progress').hidden = false; $('download-progress').value = 0;
   $('load-status').textContent = 'Starter AI fra browserens lager. Manglende filer hentes første gang …';
@@ -429,12 +444,28 @@ $('load-model').addEventListener('click', async () => {
       }, { context_window_size: 4096 });
     };
     state.engine = await Promise.race([load(), abort]);
+    modelPreferences = { model: $('model').value, autoStart: $('auto-start-ai').checked, approved: true };
+    rememberModelPreferences();
     $('download-progress').value = 1; $('load-status').textContent = 'Klar. Du kan nu stille dit første spørgsmål.';
     notice('Lokal AI er klar. Der bruges ingen betalt AI-tjeneste.'); $('settings').close();
   } catch (error) {
     resetEngine(); $('load-status').textContent = `${error.message}\nHvis modellen ikke passer i hukommelsen, vælg Lille og luk andre tunge faner. Browseren kan have slettet sin cache eller være begrænset af skolens indstillinger.`;
+    if (automatic) notice('Automatisk start af AI mislykkedes. Tryk Start lokal AI for at prøve igen eller vælge en mindre model.');
   } finally { clearTimeout(timer); state.cancelLoad = null; state.loading = false; $('download-progress').hidden = true; controls(); if (state.requestedNext && state.engine) { state.requestedNext=false; createExercise(); } else maybeStartExercise(); }
-});
+}
+$('load-model').addEventListener('click', () => loadModel());
+async function autoStartModel() {
+  if (!modelPreferences.autoStart || !modelPreferences.approved || !state.supported) return;
+  try {
+    const selected = modelPreferences.model;
+    const { hasModelInCache } = await import('@mlc-ai/web-llm');
+    if (!await canAutoStart(modelPreferences, hasModelInCache)) {
+      notice('AI-modellen mangler i browserens lager. Tryk Start lokal AI for at hente den igen.'); return;
+    }
+    if (!$('auto-start-ai').checked || $('model').value !== selected || state.loading || state.engine || state.busy || state.importing) return;
+    await loadModel(true);
+  } catch { notice('AI kunne ikke startes automatisk. Tryk Start lokal AI for at prøve igen.'); }
+}
 
 async function generate(options, onText) {
   if (!state.engine) { $('settings').showModal(); throw new Error('Start lokal AI, før du beder om et svar.'); }
@@ -677,7 +708,7 @@ $('answer-form').addEventListener('submit', async event => {
   } catch (error) { notice(error.message); $('feedback').textContent = 'Feedback kunne ikke gives.'; }
 });
 window.addEventListener('beforeunload', event => { if (state.busy || state.importing || pendingSaves || saveFailed || profile?.pending()) { event.preventDefault(); event.returnValue = ''; } });
-modelInfo(); controls(); checkGPU();
+modelInfo(); controls(); const gpuReady = checkGPU();
 initializeCourses().then(() => {
   profile = initializeProfile({
     idle: () => !state.busy && !state.loading && !state.importing && !state.initializing && !pendingSaves,
@@ -692,4 +723,4 @@ initializeCourses().then(() => {
       restoreCourse(); state.initializing = previous; controls();
     }
   });
-});
+}).then(() => gpuReady).then(autoStartModel);
