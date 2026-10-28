@@ -264,3 +264,13 @@ progress { accent-color: var(--accent); }
 .model-sketch svg { width:100%; height:auto; color:var(--text); display:block; }
 @media(max-width:700px) { .drawing-comparison { grid-template-columns:1fr; } .workout-level { align-items:flex-start; flex-direction:column; } }
 @media (max-width: 700px) { .reading-columns { grid-template-columns: 1fr; gap: 12px; } .reading-heading { align-items: flex-start; flex-direction: column; } .reading-topic > summary { padding: 18px; } .reading-topic-body { padding: 0 18px 18px; } .reading-actions { flex-wrap: wrap; } }
+#page-lesson { max-width: 960px; }
+#page-lesson > .eyebrow { margin-top: 32px; }
+#page-lesson h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.12; margin: 14px 0; }
+#page-lesson .card { margin: 24px 0; }
+#page-lesson .card h3 { margin-top: 24px; }
+#page-lesson .card p { line-height: 1.75; }
+.lesson-quiz fieldset { border: 0; padding: 0; margin: 24px 0; min-width: 0; }
+.lesson-quiz legend { margin-bottom: 16px; font-weight: 700; }
+.lesson-quiz .choice-option { margin-bottom: 12px; }
+.lesson-quiz .worked-solution { margin: 24px 0; }

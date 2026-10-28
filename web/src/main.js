@@ -1,6 +1,8 @@
 import { QUESTION_SCHEMA, rememberQuestion, unusedSeed, questionReference, parseNewQuestion, saveMistake, migrateLearning, continuingVariant } from './learning.js';
 import { webReadingFor } from './reading.js';
 import { readingPlan } from './reading-plan.js';
+import { lessonFor } from './lessons.js';
+import { createLessonView } from './lesson-view.js';
 import { LEVELS, difficultyOf, levelKey, levelAttempts, nextLevelQuestion, gradeChoice, finishAIQuestion, workedStepsFor } from './difficulty.js';
 import { modelSketch, paintDrawing, attachDrawing, drawingQuestion } from './drawing.js';
 import { readModelPreferences, saveModelPreferences, canAutoStart } from './model-preferences.js';
@@ -270,6 +272,10 @@ function renderReadingOverview() {
     const ask = document.createElement('button'); ask.className = 'secondary reading-ask'; ask.textContent = 'Spørg om emnet';
     ask.onclick = () => { $('question').value = `Forklar ${topic.title} enkelt med et konkret eksempel.`; $('question').focus(); $('chat-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     const train = document.createElement('button'); train.className = 'primary reading-train'; train.textContent = 'Træn emnet ↗'; train.onclick = () => selectSkill(topic.id);
+    if (lessonFor(topic.id)) {
+      const lesson = document.createElement('button'); lesson.className = 'primary'; lesson.textContent = 'Læs teori + 5 spørgsmål →';
+      lesson.onclick = () => openLesson(topic.id, topic.title); actions.append(lesson);
+    }
     actions.append(ask, train); body.append(actions); card.append(body); list.append(card);
   }
 }
@@ -445,6 +451,7 @@ function discardIrrelevantExercise() {
   }
 }
 function restoreCourse() {
+  if (document.getElementById('page-lesson')?.hidden === false) showPage('chat');
   const course = activeCourse(); if (!course) return;
   invalidateCatalogueAttempts(course); migrateLearning(course);
   $('subject').value = course.name; $('topic').value = course.topic; $('notes').value = course.notes; $('answer').value = course.answer;
@@ -622,11 +629,12 @@ $('question').addEventListener('keydown', event => { if (event.key === 'Enter' &
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { $('question').value = button.dataset.prompt; $('question').focus(); if (!state.engine) $('settings').showModal(); }));
 function showPage(name) {
   document.querySelectorAll('.page').forEach(page => { page.hidden = page.id !== `page-${name}`; });
-  document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav.dataset.page === (name === 'workout' ? 'practice' : name)));
+  document.querySelectorAll('.nav').forEach(nav => nav.classList.toggle('active', nav.dataset.page === (name === 'workout' ? 'practice' : name === 'lesson' ? 'chat' : name)));
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (name === 'workout') $('workout-title').focus({ preventScroll: true });
   if (name === 'chat') { renderReadingOverview(); controls(); }
 }
+const openLesson = createLessonView({ activeCourse, persist, showPage, renderText: renderMathText });
 document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.page)));
 $('back-to-training').addEventListener('click', () => { persist(); showPage('practice'); });
 $('clear-chat').addEventListener('click', resetContext);
