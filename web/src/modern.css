@@ -241,6 +241,10 @@ progress { accent-color: var(--accent); }
 .reading-page-links button { font-size: 11px; }
 .reading-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .level-options { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.worked-solution { padding:18px 22px; margin:18px 0; border-left:3px solid var(--accent); background:var(--accent-soft); border-radius:0 12px 12px 0; }
+.worked-solution h3 { margin:0 0 12px; font-size:15px; }
+.worked-solution ol { padding-left:22px; margin:0; }
+.worked-solution li { padding-left:4px; margin:10px 0; line-height:1.7; }
 .level-options button { padding:7px 12px; font-size:12px; }
 .level-options button[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
 .workout-level { display:flex; align-items:center; gap:12px; margin-bottom:20px; }

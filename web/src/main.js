@@ -1,7 +1,7 @@
 import { QUESTION_SCHEMA, rememberQuestion, unusedSeed, questionReference, parseNewQuestion, saveMistake, migrateLearning, continuingVariant } from './learning.js';
 import { webReadingFor } from './reading.js';
 import { readingPlan } from './reading-plan.js';
-import { LEVELS, difficultyOf, levelKey, levelAttempts, nextLevelQuestion, gradeChoice, finishAIQuestion } from './difficulty.js';
+import { LEVELS, difficultyOf, levelKey, levelAttempts, nextLevelQuestion, gradeChoice, finishAIQuestion, workedStepsFor } from './difficulty.js';
 import { modelSketch, paintDrawing, attachDrawing, drawingQuestion } from './drawing.js';
 import { readModelPreferences, saveModelPreferences, canAutoStart } from './model-preferences.js';
 import { CONCEPT_QUESTIONS, conceptGradingTask, randomTrainingSkill } from './concepts.js';
@@ -135,9 +135,21 @@ function renderAssessment(assessment) {
   if (typeof assessment.correct === 'boolean') { const result = document.createElement('strong'); result.textContent = assessment.correct ? (assessment.multipleChoice ? '✓ Rigtigt' : '✓ Rigtigt · AI-vurdering') : assessment.medal ? '↻ Ikke helt rigtigt · rækken starter forfra' : '↻ Ikke helt rigtigt · gemt til Øv fejl'; $('feedback').append(result); }
   if (assessment.drawingReview) sources.textContent='Vejledende modelskitse til egenkontrol.';
   if (assessment.multipleChoice || assessment.drawingReview) title.hidden = true;
-  $('feedback').append(title, warning, feedback, solution, sources);
+  $('feedback').append(title, warning, feedback, solution);
+  appendWorkedSteps($('feedback'),assessment);
+  $('feedback').append(sources);
   if (assessment.drawingReview) appendDrawingReview($('feedback'), assessment);
   renderReadingLinks($('feedback'), assessment);
+}
+function appendWorkedSteps(container, assessment) {
+  if(!assessment.multipleChoice) return;
+  const steps=workedStepsFor(assessment,assessment.skillId);
+  if(!steps.length) return;
+  const section=document.createElement('section'); section.className='worked-solution';
+  const heading=document.createElement('h3'); heading.textContent='Sådan løser du opgaven';
+  const list=document.createElement('ol');
+  for(const step of steps) { const li=document.createElement('li'); renderMathText(li,step); list.append(li); }
+  section.append(heading,list); container.append(section);
 }
 function renderQuestionType() {
   const ref = questionReference(activeCourse() || {questionHistory:{},mistakes:{}}, state.exerciseSkillId, state.exercise);
@@ -417,8 +429,8 @@ function renderCourses() {
   if (!course.attempts.length) $('course-attempts').textContent = 'Ingen bedømmelser i dette fag endnu.';
   for (const attempt of [...course.attempts].reverse()) {
     const detail = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = `${attempt.invalidatedReason ? 'Ugyldig opgave' : attempt.drawingReview ? 'Tegneopgave · Egenkontrol' : attempt.multipleChoice ? (attempt.correct ? 'Rigtigt' : 'Forkert') : gradeLabel(attempt.score)} · ${LEVELS[difficultyOf(attempt.difficulty)].label} · ${attempt.topic || course.name} · ${new Date(attempt.created).toLocaleDateString('da-DK')}`;
-    const body = document.createElement('div'); body.className = 'prose'; renderMathText(body, `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${sourceText(attempt.sources)}`); if (attempt.invalidatedReason) renderMathText(body, `${attempt.invalidatedReason}\n\nOprindelig opgave:\n${attempt.question}\n\nDin bevarede besvarelse:\n${attempt.answer}`);
-    else { renderReadingLinks(body, attempt); if(attempt.drawingReview) appendDrawingReview(body,attempt); } detail.append(summary, body); $('course-attempts').append(detail);
+    const body = document.createElement('div'); body.className = 'prose'; renderMathText(body, `${attempt.question}\n\nDit svar:\n${attempt.answer}\n\n${attempt.feedback}\n\nLøsningsforslag:\n${attempt.solution}\n\n${attempt.multipleChoice ? 'Bedømt direkte efter opgavens facit.' : sourceText(attempt.sources)}`); if (attempt.invalidatedReason) renderMathText(body, `${attempt.invalidatedReason}\n\nOprindelig opgave:\n${attempt.question}\n\nDin bevarede besvarelse:\n${attempt.answer}`);
+    else { appendWorkedSteps(body,attempt); renderReadingLinks(body, attempt); if(attempt.drawingReview) appendDrawingReview(body,attempt); } detail.append(summary, body); $('course-attempts').append(detail);
   }
   renderTraining();
   renderReadingOverview();
@@ -710,8 +722,8 @@ async function createExercise() {
   const angle=angles[(course.questionHistory[skill.id] || []).length % angles.length];
   $('exercise').hidden=false; $('exercise-question').textContent='Laver et nyt begrebsspørgsmål …'; $('answer-form').hidden=true; $('feedback').hidden=true;
   try {
-    const choiceSchema={...QUESTION_SCHEMA,properties:{...QUESTION_SCHEMA.properties,choices:{type:'array',items:{type:'string'},minItems:4,maxItems:4},correctIndex:{type:'integer',minimum:0,maximum:3}},required:[...QUESTION_SCHEMA.required,'choices','correctIndex']};
-    const instruction=state.difficulty==='medium' ? 'Lav et dansk multiple choice-spørgsmål med præcis fire forskellige muligheder, kun ét fagligt korrekt svar og tre plausible, forkerte svar. Returner JSON question, answer (facit og forklaring), choices (fire tekster), correctIndex (0 til 3). Ingen bogstaver foran valgene.' : state.difficulty==='hard' ? 'Lav en svær dansk anvendelsesopgave med to deltrin, begrundelse eller beregning. Returner JSON question (højst 35 ord) og answer (facit med mellemtrin, højst 90 ord).' : 'Lav et let dansk begynderspørgsmål. Returner JSON question og answer. Ét fagligt begreb eller enkelt regneeksempel.';
+    const choiceSchema={...QUESTION_SCHEMA,properties:{...QUESTION_SCHEMA.properties,choices:{type:'array',items:{type:'string'},minItems:4,maxItems:4},correctIndex:{type:'integer',minimum:0,maximum:3},steps:{type:'array',items:{type:'string'},minItems:1,maxItems:8}},required:[...QUESTION_SCHEMA.required,'choices','correctIndex','steps']};
+    const instruction=state.difficulty==='medium' ? 'Lav et dansk multiple choice-spørgsmål med præcis fire forskellige muligheder, kun ét fagligt korrekt svar og tre plausible, forkerte svar. Returner JSON question, answer (facit og forklaring), choices (fire tekster), correctIndex (0 til 3), steps (2 til 5 korte løsningstrin med regel, indsatte tal og mellemregninger; ved begrebsspørgsmål forklares begrundelsen). Ingen bogstaver foran valgene.' : state.difficulty==='hard' ? 'Lav en svær dansk anvendelsesopgave med to deltrin, begrundelse eller beregning. Returner JSON question (højst 35 ord) og answer (facit med mellemtrin, højst 90 ord).' : 'Lav et let dansk begynderspørgsmål. Returner JSON question og answer. Ét fagligt begreb eller enkelt regneeksempel.';
     const result=await generate({topic:skill.title,documents:topicDocuments(state.documents,skill),schema:state.difficulty==='medium'?choiceSchema:QUESTION_SCHEMA,query:'Emne: '+skill.title+'. Niveau: '+LEVELS[state.difficulty].label+'. Tidligere spørgsmål: '+previous+'. Faglige ankre: '+anchors.slice(0,450)+'. Vinkel: '+angle+'. Variation: '+crypto.randomUUID().slice(0,8),task:instruction+' Selvstændigt spørgsmål uden citater, materialehenvisninger eller kursuspraktik. Undgå tidligere spørgsmål.'},()=>{});
     if (!result || result.partial) throw new Error('AI’en afsluttede ikke den nye opgave. Prøv igen; intet er talt.');
     const parsed=parseNewQuestion(result.text,course,skill.id); const item=finishAIQuestion(parsed,JSON.parse(result.text),state.difficulty,course.questionHistory[skill.id] || []); presentQuestion(skill,item,'ai'); notice('Nyt AI-spørgsmål. Facit og bedømmelse er vejledende.');
@@ -778,7 +790,7 @@ $('answer-form').addEventListener('submit', async event => {
     try {
       if(conceptReference.choices) {
         const answer=$('answer').value;
-        const result=gradeChoice(conceptReference,answer);
+        const result=gradeChoice(conceptReference,answer,state.exerciseSkillId);
         storeAssessment({...base,...result,answer,multipleChoice:true,aiGenerated:conceptReference.origin==='ai',feedback:result.correct?'Du valgte det rigtige svar.':'Det valgte svar er forkert. Se facit og prøv en ny opgave.'},conceptReference,run);
       } else {
         if(!state.drawing.length) { notice('Lav først din skitse i tegnefeltet.'); return; }

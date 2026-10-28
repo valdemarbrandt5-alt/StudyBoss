@@ -98,3 +98,8 @@ Hver opgavetype tilbyder Let (korte begrebsspørgsmål), Mellem (fire svarmuligh
 Multiple choice kontrolleres direkte mod det gemte facit og kræver ingen AI til selve bedømmelsen. Der gives rigtigt/forkert, ikke en opdigtet 7-trinskarakter. Forkerte valg bevarer opgave, valgmuligheder, korrekt indeks og oprindeligt elevsvar i Øv fejl. At genbedømme den samme opgave kan ikke give flere medaljepoint. Kladder, fremgang, udfordringer og optjente medaljer er adskilt pr. niveau. Gamle kladder og medaljer beholder deres oprindelige nøgler og tilhører Let.
 
 Tegneopgaver løses med mus, pen eller finger på et lærred. Stregdata gemmes med kladden og kan fortrydes eller ryddes. Efter afsløring vises den bevarede skitse sammen med en vejledende, ikke målfast modelskitse og en tjekliste. Den lokale tekstmodel vurderer ikke billedet. Der gives derfor ingen AI-karakter, rigtigt/forkert, mestring eller medaljepoint for egenkontrol af tegninger. Skitse og reference bevares i historikken; tegneopgaver bliver ikke registreret som forkerte besvarelser ved genindlæsning.
+
+
+### Mellemregninger til multiple choice
+
+Regnevarianterne på mellemniveau viser efter besvarelsen en nummereret løsning med regel, indsatte værdier og mellemregninger. Svaret og svarmulighederne ændres ikke. Løsningstrin gemmes med nye opgaver og bedømmelser. Allerede gemte skabelonopgaver kan få de samme trin ved visning, hvis både hele opgaveteksten og det gemte facit matcher den kendte skabelon; der foretages ingen ny bedømmelse eller ændring af medaljer. Historik og genøvelse viser også trinnene. AI-genererede multiple choice-opgaver instrueres til at returnere separate løsningstrin, som valideres og stadig er vejledende.

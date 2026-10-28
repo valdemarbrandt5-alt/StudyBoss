@@ -52,6 +52,49 @@ const hard = {
   fractions: n => ['En vare koster '+((n+3)*100)+' kr. Prisen sættes først 20 procent ned og derefter 10 procent op. Beregn slutprisen og den samlede procentvise ændring. Forklar, hvorfor procenterne ikke blot lægges sammen.', 'Slutprisen er '+((n+3)*100)+'·0,8·1,1='+((n+3)*88)+' kr. Faktoren er 0,88, altså 12 procent ned. Sidste procent beregnes af den nedsatte pris.'],
   photosynthesis: n => ['Fotosyntesens samlede reaktion bruger 6 CO2 og 6 H2O pr. glukosemolekyle. Beregn behovet for at danne '+(n+2)+' glukosemolekyler. Forklar derefter, hvorfor nok vand og CO2 ikke er tilstrækkeligt i mørke.', 'Der kræves '+(6*(n+2))+' CO2 og '+(6*(n+2))+' H2O i den samlede reaktion. Lys leverer energien til lysreaktionerne, som danner ATP og NADPH til kulstoffikseringen. Vand og CO2 alene leverer ikke denne energi.']
 };
+const mediumSteps = {
+  networks: n => ['En neurons vægtede sum er z = vægt × input + bias.', 'Indsæt værdierne: z = 2 × '+(n+2)+' + 3.', 'Gang først: 2 × '+(n+2)+' = '+(2*n+4)+'.', 'Læg bias til: '+(2*n+4)+' + 3 = '+(2*n+7)+'. Aktiveringen er ikke med i denne beregning.'],
+  gradient: n => ['Gradient descent bruger reglen: ny parameter = gammel parameter − læringsrate × gradient.', 'Indsæt værdierne: '+(n+8)+' − 0,5 × 4.', 'Beregn skridtet først: 0,5 × 4 = 2.', 'Træk skridtet fra parameteren: '+(n+8)+' − 2 = '+(n+6)+'. Vi trækker fra, fordi gradient descent går modsat gradienten.'],
+  backprop: n => ['Brug kædereglen: dL/dx = (dL/dy) × (dy/dx).', 'Fra L = '+(n+2)+'y fås dL/dy = '+(n+2)+'.', 'Fra y = 2x fås dy/dx = 2.', 'Gang de lokale afledte: '+(n+2)+' × 2 = '+(2*n+4)+'.'],
+  cnn: n => ['Outputbredde = floor((inputbredde + 2 × padding − filterbredde) / stride) + 1.', 'Indsæt: floor(('+ (n+6)+' + 2 × 0 − 3) / 1) + 1.', 'Træk filterbredden fra: '+(n+6)+' − 3 = '+(n+3)+'.', 'Divider med stride og læg 1 til: '+(n+3)+' / 1 + 1 = '+(n+4)+'.'],
+  activations: n => ['ReLU er defineret som ReLU(x) = max(0, x).', 'Indsæt x = '+(-(n+2))+': max(0, '+(-(n+2))+').', '0 er større end '+(-(n+2))+', så outputtet er 0.'],
+  loss: n => ['Den kvadrerede fejl er (forudsigelse − mål)².', 'Indsæt: ('+(n+1)+' − '+(2*n+4)+')².', 'Beregn forskellen: '+(n+1)+' − '+(2*n+4)+' = '+(-(n+3))+'.', 'Kvadrér forskellen: ('+(-(n+3))+') × ('+(-(n+3))+') = '+((n+3)**2)+'. Et negativt tal ganget med sig selv bliver positivt.'],
+  regularization: n => ['Modellen har '+(n+91)+' rigtige ud af '+(n+100)+' på træningsdata.', 'Den klarer nye data dårligere. Derfor skal træning og generalisering vurderes hver for sig.', 'Undersøg overfitting på valideringsdata. En god træningsscore alene garanterer ikke gode svar på nye data.'],
+  algebra: n => ['Start med ligningen: 3x + 2 = '+(3*(n+2)+2)+'.', 'Træk 2 fra på begge sider: 3x = '+(3*(n+2))+'.', 'Divider begge sider med 3: x = '+(3*(n+2))+' / 3 = '+(n+2)+'.', 'Kontrollér: 3 × '+(n+2)+' + 2 = '+(3*(n+2)+2)+'. Det passer med højresiden.'],
+  derivatives: n => ['Brug potensreglen: den afledte af a × x² er a × 2x.', 'Her er a = '+(n+2)+', så f′(x) = '+(n+2)+' × 2x.', 'Gang konstanterne: f′(x) = '+(2*(n+2))+'x.'],
+  probability: n => ['Sandsynlighed = antal gunstige udfald / antal mulige udfald.', 'Antal røde kugler = '+(n+3)+'.', 'Antal kugler i alt = '+(n+3)+' + 2 = '+(n+5)+'.', 'Sandsynligheden for rød er derfor '+(n+3)+' / '+(n+5)+'. Brøken må gerne forkortes.'],
+  fractions: n => ['10 procent svarer til 10 / 100 = 0,1, altså en tiendedel.', 'Beregn '+((n+3)*100)+' × 0,1, eller divider tallet med 10.', ((n+3)*100)+' / 10 = '+((n+3)*10)+'.'],
+  photosynthesis: n => ['Den samlede reaktion bruger 6 CO2-molekyler pr. glukosemolekyle.', 'Antal CO2 = 6 × antal glukosemolekyler.', 'Indsæt og gang: 6 × '+(n+2)+' = '+(6*(n+2))+' CO2-molekyler.']
+};
+const parameterPatterns = {
+  networks: [/^En neuron har input (\d+), vægt 2 og bias 3\./u, 2],
+  gradient: [/^En parameter er (\d+), gradienten er 4/u, 8],
+  backprop: [/^Hvis y = 2x og L = (\d+)y/u, 2],
+  cnn: [/^Et input har bredde (\d+)\./u, 6],
+  activations: [/^Hvad giver ReLU ved input -(\d+)\?/u, 2],
+  loss: [/^En model forudsiger (\d+), men målet er/u, 1],
+  regularization: [/^En model har (\d+) korrekte træningssvar/u, 91],
+  algebra: [/^Løs ligningen 3x \+ 2 = (\d+)\./u, null],
+  derivatives: [/^Hvad er den afledte af f\(x\) = (\d+)x²/u, 2],
+  probability: [/^En pose har (\d+) røde og 2 blå/u, 3],
+  fractions: [/^Hvad er 10 procent af (\d+)\?/u, null],
+  photosynthesis: [/Hvor mange CO2 kræves til (\d+) glukosemolekyler/u, 2]
+};
+export function workedStepsFor(item, skillId) {
+  if (Array.isArray(item?.steps) && item.steps.length && item.steps.every(s=>typeof s==='string' && s.trim())) return item.steps;
+  if (!item?.question?.startsWith('Vælg ét svar. ')) return [];
+  const topic=skillId?.replace('concept-',''), entry=parameterPatterns[topic];
+  if (!entry) return [];
+  const question=item.question.slice('Vælg ét svar. '.length), match=question.match(entry[0]);
+  if (!match) return [];
+  const value=Number(match[1]);
+  const n=topic==='algebra'?(value-2)/3-2:topic==='fractions'?value/100-3:value-entry[1];
+  if (!Number.isInteger(n) || n<1) return [];
+  const [expectedQuestion, answer]=medium[topic](n);
+  const referenceAnswer=item.solution ?? item.answer;
+  if(question!==expectedQuestion || String(answer)!==String(referenceAnswer)) return [];
+  return mediumSteps[topic](n);
+}
 export function nextLevelQuestion(course, skillId, level, random = Math.random) {
   if (!CONCEPT_QUESTIONS[skillId] || difficultyOf(level) === 'easy') return null;
   const topic = skillId.replace('concept-', '');
@@ -62,16 +105,17 @@ export function nextLevelQuestion(course, skillId, level, random = Math.random) 
     if (level === 'medium') {
       const [question, correct, ...wrong] = n === 0 ? starter[topic] : (() => { const [q,a,w] = medium[topic](n); return [q,a,...w]; })();
       item = choices(question, correct, wrong, random);
+      if(n>0) item.steps=mediumSteps[topic](n);
     } else if (level === 'drawing') item = drawingQuestion(skillId,n+1);
     else { const [question,answer] = hard[topic](n+1); item = { question, answer, difficulty: 'hard' }; }
     if (!history.some(old => old.question === item.question)) return item;
     n++;
   }
 }
-export function gradeChoice(item, answer) {
+export function gradeChoice(item, answer, skillId = '') {
   if (!Array.isArray(item?.choices) || item.choices.length !== 4 || !Number.isInteger(item.correctIndex) || item.correctIndex < 0 || item.correctIndex > 3 || new Set(item.choices).size !== 4) throw new Error('Opgaven mangler et entydigt facit.');
   if (!item.choices.includes(answer)) throw new Error('Vælg én svarmulighed.');
-  return { correct: answer === item.choices[item.correctIndex], solution: item.answer };
+  return { correct: answer === item.choices[item.correctIndex], solution: item.answer, steps: workedStepsFor(item,skillId) };
 }
 export function finishAIQuestion(item, raw, level, previous = []) {
   const result={...item,difficulty:difficultyOf(level)};
@@ -79,6 +123,10 @@ export function finishAIQuestion(item, raw, level, previous = []) {
     if(!Array.isArray(raw.choices) || raw.choices.length!==4 || raw.choices.some(text=>typeof text!=='string' || !text.trim() || text.length>300) || new Set(raw.choices.map(s=>s.trim())).size!==4 || !Number.isInteger(raw.correctIndex) || raw.correctIndex<0 || raw.correctIndex>3) throw new Error('AI-opgaven mangler fire forskellige muligheder og ét facit. Prøv igen.');
     result.choices=raw.choices.map(s=>s.trim()); result.correctIndex=raw.correctIndex;
     result.question='Vælg ét svar. '+item.question;
+    if(raw.steps !== undefined) {
+      if(!Array.isArray(raw.steps) || !raw.steps.length || raw.steps.length>8 || raw.steps.some(s=>typeof s!=='string' || !s.trim() || s.length>500)) throw new Error('AI-opgaven mangler brugbare løsningstrin. Prøv igen.');
+      result.steps=raw.steps.map(s=>s.trim());
+    }
   }
   if(previous.some(old=>old.question===result.question)) throw new Error('AI’en gentog en tidligere opgave. Prøv igen.');
   return result;

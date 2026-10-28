@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONCEPT_QUESTIONS } from '../src/concepts.js';
-import { nextLevelQuestion, gradeChoice, levelKey, levelAttempts, finishAIQuestion } from '../src/difficulty.js';
+import { nextLevelQuestion, gradeChoice, levelKey, levelAttempts, finishAIQuestion, workedStepsFor } from '../src/difficulty.js';
 import { modelSketch, drawingQuestion } from '../src/drawing.js';
 import { newCourse, normalizeWorkspace } from '../src/storage.js';
 import { rememberQuestion, questionReference, saveMistake, migrateLearning } from '../src/learning.js';
@@ -88,4 +88,38 @@ test('malformed AI multiple choice never becomes a graded task and generic drawi
   const custom=drawingQuestion('custom-topic',1,'Et eget emne');
   assert.match(custom.question,/Et eget emne/);
   assert.match(modelSketch(custom),/Hovedbegreb/);
+});
+test('the reported old gradient question gains the correct working even when the student chose 13', () => {
+  const old={question:'Vælg ét svar. En parameter er 9, gradienten er 4 og læringsraten 0,5. Hvad er den nye parameter?',answer:'13',solution:'7',skillId:'concept-gradient',multipleChoice:true};
+  const steps=workedStepsFor(old,old.skillId);
+  assert.equal(steps.length,4);
+  assert.match(steps.join('\n'),/ny parameter = gammel parameter − læringsrate × gradient/);
+  assert.match(steps.join('\n'),/9 − 0,5 × 4/);
+  assert.match(steps.join('\n'),/0,5 × 4 = 2/);
+  assert.match(steps.join('\n'),/9 − 2 = 7/);
+  assert.deepEqual(workedStepsFor({...old,solution:'13'},old.skillId),[],'Do not invent a derivation when the saved reference disagrees');
+});
+test('every continuing medium topic stores steps, can reconstruct old steps and keeps its shuffled choice correct', () => {
+  for(const skillId of Object.keys(CONCEPT_QUESTIONS)) {
+    const course=newCourse('Course','id');
+    rememberQuestion(course,skillId,nextLevelQuestion(course,skillId,'medium'),'level-template');
+    for(let i=0;i<20;i++) {
+      const item=nextLevelQuestion(course,skillId,'medium',()=>.8);
+      assert.ok(item.steps.length>=3);
+      const {steps:removed,...legacy}=item;
+      assert.deepEqual(workedStepsFor(legacy,skillId),removed);
+      const result=gradeChoice(legacy,legacy.choices[legacy.correctIndex],skillId);
+      assert.equal(result.correct,true);
+      assert.deepEqual(result.steps,removed);
+      assert.equal(result.solution,legacy.answer);
+      rememberQuestion(course,skillId,item,'level-template');
+    }
+  }
+});
+test('AI solution steps are retained and invalid step payloads are rejected', () => {
+  const item={question:'Beregn et produkt af to tal.',answer:'Produktet er 6.'};
+  const raw={choices:['2','3','6','8'],correctIndex:2,steps:['Gang de to tal.','2 × 3 = 6.']};
+  assert.deepEqual(finishAIQuestion(item,raw,'medium').steps,raw.steps);
+  assert.throws(()=>finishAIQuestion(item,{...raw,steps:['']},'medium'),/løsningstrin/);
+  assert.throws(()=>finishAIQuestion(item,{...raw,steps:'ikke en liste'},'medium'),/løsningstrin/);
 });
