@@ -8,6 +8,8 @@ test('every supported topic teaches exactly five valid questions', () => {
     const lesson = lessonFor(id);
     assert.equal(lesson.questions.length, 5, id);
     assert.ok(lesson.theory.length && lesson.example.answer);
+    assert.equal(lesson.theory.length, 6, id);
+    assert.ok(lesson.theory.map(section => section.text).join(' ').split(/\s+/).length >= 240, `${id}: substantial theory`);
     for (const question of lesson.questions) {
       assert.equal(question.choices.length, 4);
       assert.equal(new Set(question.choices).size, 4);

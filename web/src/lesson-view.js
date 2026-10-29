@@ -18,12 +18,20 @@ export function createLessonView({ activeCourse, persist, showPage, renderText }
     button('← Tilbage til læseplanen', page, () => showPage('chat'));
     element('p', 'LÆS · FORSTÅ · PRØV SELV', page, 'eyebrow');
     const heading = element('h1', selectedTitle, page); heading.tabIndex = -1;
-    element('p', 'En kort introduktion og fem spørgsmål. Du behøver ikke starte AI. Forløbet gemmes i dette fag.', page, 'hint');
+    const wordCount = lesson.theory.reduce((count, section) => count + section.text.split(/\s+/).length, 0);
+    element('p', `Teori, gennemregnede eksempler og fem spørgsmål · ca. ${Math.max(2, Math.ceil(wordCount / 160))} min. læsning. Forløbet gemmes i dette fag.`, page, 'hint');
     const theory = document.createElement(progress.started ? 'details' : 'section'); theory.className = 'card'; page.append(theory);
     element(progress.started ? 'summary' : 'h2', 'Teori og eksempel', theory);
-    for (const paragraph of lesson.theory) { element('h3', paragraph.title, theory); element('p', paragraph.text, theory); }
+    const contents = element('nav', '', theory, 'lesson-contents'); contents.setAttribute('aria-label', 'Afsnit i teorien');
+    for (const [index, paragraph] of lesson.theory.entries()) {
+      const link = element('a', paragraph.title, contents); link.href = `#lesson-section-${index}`;
+    }
+    for (const [index, paragraph] of lesson.theory.entries()) {
+      const section = element('section', '', theory); section.id = `lesson-section-${index}`;
+      element('h3', paragraph.title, section); element('p', paragraph.text, section);
+    }
     element('h3', 'Et eksempel', theory); element('p', lesson.example.question, theory); element('p', lesson.example.answer, theory);
-    element('p', 'Dette er en kort begrebsintroduktion. Dit materiale og læselinkene i læseplanen giver mere dybde.', theory, 'hint');
+    element('p', 'Teorien forklarer emnets grundbegreber. Brug også dit undervisningsmateriale og læselinkene i læseplanen til at gå videre.', theory, 'hint');
     if (!progress.started) {
       button('Jeg har læst teorien · Start de 5 spørgsmål →', page, () => { progress.started = true; persist(); render(); }, 'primary'); return;
     }

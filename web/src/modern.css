@@ -274,3 +274,6 @@ progress { accent-color: var(--accent); }
 .lesson-quiz legend { margin-bottom: 16px; font-weight: 700; }
 .lesson-quiz .choice-option { margin-bottom: 12px; }
 .lesson-quiz .worked-solution { margin: 24px 0; }
+.lesson-contents { display: grid; gap: 10px; margin: 20px 0 28px; padding: 18px; border: 1px solid currentColor; border-radius: 12px; }
+.lesson-contents a { line-height: 1.5; text-underline-offset: 4px; }
+#page-lesson [id^="lesson-section-"] { scroll-margin-top: 24px; }
